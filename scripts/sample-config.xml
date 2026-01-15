@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE properties SYSTEM "http://java.sun.com/dtd/properties.dtd">
+<properties>
+    <comment>YDB Key Prefix Demo settings</comment>
+    <entry key="ydb.url">jdbc:ydb:grpcs://host:2135/Root/testdb?secureConnectionCertificate=file:~/myca.cer</entry>
+    <entry key="ydb.user">user</entry>
+    <entry key="ydb.password">password123</entry>
+    <entry key="ddl.file">sample-ddl.sql</entry>
+    <entry key="gen.salt">somerandomsaltvalue</entry>
+    <entry key="gen.scale">1000</entry>
+    <entry key="gen.threads">100</entry>
+    <entry key="test.threads">100</entry>
+</properties>
