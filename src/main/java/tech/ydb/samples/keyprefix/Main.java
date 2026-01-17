@@ -27,6 +27,8 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
+import tech.ydb.jdbc.exception.YdbRetryableException;
 
 /**
  *
@@ -209,7 +211,13 @@ public class Main implements AutoCloseable {
 
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
+        var lastReported = Instant.now();
         for (int i = 0; i < config.getGeneratorScale(); ++i) {
+            var now = Instant.now();
+            if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
+                lastReported = now;
+                LOG.info("Filling data for {}: completed {} of {}", dt, i, config.getGeneratorScale());
+            }
             fillDateStepRetry(dt, i);
         }
         LOG.info("Completed filling data for {}.", dt);
@@ -222,7 +230,12 @@ public class Main implements AutoCloseable {
                 fillDateStep(conn, dt, iteration);
                 return retryCount;
             } catch (Exception ex) {
-                reason = ex;
+                if (ex instanceof YdbRetryableException
+                        || ex instanceof YdbConditionallyRetryableException) {
+                    reason = ex;
+                } else {
+                    throw new RuntimeException("Fill iteration failed: non-retryable exception", ex);
+                }
             }
         }
         throw new RuntimeException("Fill iteration failed: retry count exceeded", reason);
