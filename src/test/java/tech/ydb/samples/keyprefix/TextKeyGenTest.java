@@ -1,6 +1,7 @@
 package tech.ydb.samples.keyprefix;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import org.junit.Assert;
@@ -16,12 +17,13 @@ public class TextKeyGenTest {
     public void testTextKeyGen() {
         var gen = new TextKeyGen();
         var map = new HashMap<String, Long>();
+        LocalDate now = LocalDate.now();
         // Generate and collect the number of values per prefix
         var startedAt = Instant.now();
         for (int i = 0; i < 10000000; ++i) {
             long pfx = gen.nextPrefix();
             for (int j = 0; j < 10; ++j) {
-                String id = gen.nextValue(pfx);
+                String id = gen.nextValue(pfx, now);
                 String x = id.substring(0, 2);
                 Long count = map.get(x);
                 map.put(x, (count == null) ? 1 : count + 1L);

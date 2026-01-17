@@ -42,6 +42,13 @@ public class UuidKeyGen {
     }
 
     /**
+     * @return Prefix size used for construction, in bits.
+     */
+    public int getPrefixBits() {
+        return maskPos + 1;
+    }
+
+    /**
      * Generates the new shared prefix to generate a series of related IDs.
      *
      * @return 64-bit random value to be used as a prefix.
@@ -52,20 +59,31 @@ public class UuidKeyGen {
     }
 
     /**
+     * Generates the new ID with the specified prefix value and date.
+     *
+     * @param prefix Prefix value
+     * @param date The date to be used for the generated value
+     * @return Random UUID with the embedded prefix, date code and suffix.
+     */
+    public UUID nextValue(long prefix, LocalDate date) {
+        UUID v = UUID.randomUUID();
+        long prefixMask = Holder.prefixMasks[maskPos];
+        long dateMask = Holder.dateMasks[maskPos];
+        long bits = v.getMostSignificantBits() & ~(prefixMask | dateMask);
+        long dateCode = getDateCode(date);
+        dateCode = dateCode << (49 - maskPos);
+        bits |= (prefix & prefixMask) | (dateCode & dateMask);
+        return new UUID(bits, v.getLeastSignificantBits());
+    }
+
+    /**
      * Generates the new ID with the specified prefix value.
      *
      * @param prefix Prefix value
      * @return Random UUID with the embedded prefix, date code and suffix.
      */
     public UUID nextValue(long prefix) {
-        UUID v = UUID.randomUUID();
-        long prefixMask = Holder.prefixMasks[maskPos];
-        long dateMask = Holder.dateMasks[maskPos];
-        long bits = v.getMostSignificantBits() & ~(prefixMask | dateMask);
-        long date = getDateCode();
-        date = date << (49 - maskPos);
-        bits |= (prefix & prefixMask) | (date & dateMask);
-        return new UUID(bits, v.getLeastSignificantBits());
+        return nextValue(prefix, LocalDate.now());
     }
 
     /**
@@ -74,16 +92,16 @@ public class UuidKeyGen {
      * @return Random UUID with the embedded prefix, date code and suffix.
      */
     public UUID nextValue() {
-        return nextValue(nextPrefix());
+        return nextValue(nextPrefix(), LocalDate.now());
     }
 
     /**
-     * Compute the date code which fits into 14 bits.
+     * Compute the date code which fits into 14 bits, for the specific date.
      *
+     * @param date the date for which the code should be computed
      * @return datecode integer between 0 and 14639, inclusive.
      */
-    public int getDateCode() {
-        LocalDate date = LocalDate.now();
+    public static int getDateCode(LocalDate date) {
         return date.getDayOfYear() - 1 + (366 * (date.getYear() % 40));
     }
 
