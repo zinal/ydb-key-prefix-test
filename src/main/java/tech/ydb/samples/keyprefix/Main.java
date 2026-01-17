@@ -11,6 +11,8 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Properties;
@@ -18,6 +20,7 @@ import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
@@ -25,8 +28,7 @@ import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
+
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
 
@@ -43,6 +45,7 @@ public class Main implements AutoCloseable {
     private final TextKeyGen keyGen;
     private final ArrayList<String> ballastLines;
     private final ZoneId timeZone;
+    private final AtomicLong completed = new AtomicLong();
 
     public Main(Config sc) {
         this.config = sc;
@@ -71,6 +74,7 @@ public class Main implements AutoCloseable {
 
     public void fill() throws Exception {
         LOG.info("Fill started...");
+        completed.set(0L);
         try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
             var tasks = new ArrayList<Future<?>>();
             // one task per date
@@ -81,9 +85,7 @@ public class Main implements AutoCloseable {
                 tasks.add(task);
                 current = current.plusDays(1);
             }
-            for (var task : tasks) {
-                task.get();
-            }
+            waitForCompletion(tasks);
         }
         LOG.info("Fill successful!");
     }
@@ -211,14 +213,9 @@ public class Main implements AutoCloseable {
 
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
-        var lastReported = Instant.now();
         for (int i = 0; i < config.getGeneratorScale(); ++i) {
-            var now = Instant.now();
-            if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
-                lastReported = now;
-                LOG.info("Filling data for {}: completed {} of {}", dt, i, config.getGeneratorScale());
-            }
             fillDateStepRetry(dt, i);
+            completed.incrementAndGet();
         }
         LOG.info("Completed filling data for {}.", dt);
     }
@@ -352,6 +349,29 @@ public class Main implements AutoCloseable {
             throw new RuntimeException("Failed to read file " + fname, ix);
         }
         return lines;
+    }
+
+    private void waitForCompletion(ArrayList<Future<?>> tasks) {
+        var lastReported = Instant.now();
+        while (true) {
+            int completedCount = (int) tasks.stream()
+                    .filter(f -> f.isDone() || f.isCancelled())
+                    .count();
+            if (completedCount >= tasks.size()) {
+                break;
+            }
+            var now = Instant.now();
+            if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
+                lastReported = now;
+                LOG.info("Completed {} of {} ({} of {} parts)",
+                        completedCount, tasks.size(),
+                        completed.get(), 1000L * tasks.size());
+            }
+            try {
+                Thread.sleep(200L);
+            } catch (InterruptedException ix) {
+            }
+        }
     }
 
     public static final class DataEntry {
