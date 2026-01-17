@@ -230,6 +230,11 @@ public class Main implements AutoCloseable {
                 if (ex instanceof YdbRetryableException
                         || ex instanceof YdbConditionallyRetryableException) {
                     reason = ex;
+                    try {
+                        Thread.sleep(ThreadLocalRandom.current().nextLong(100L, 500L));
+                    } catch (InterruptedException ix) {
+                        Thread.currentThread().interrupt();
+                    }
                 } else {
                     throw new RuntimeException("Fill iteration failed: non-retryable exception", ex);
                 }
@@ -298,7 +303,7 @@ public class Main implements AutoCloseable {
     private String newBallast() {
         StringBuilder sb = new StringBuilder();
         sb.append(getBallastLine());
-        while (sb.length() < 1000) {
+        while (sb.length() < 500) {
             sb.append(", ");
             sb.append(getBallastLine());
         }
