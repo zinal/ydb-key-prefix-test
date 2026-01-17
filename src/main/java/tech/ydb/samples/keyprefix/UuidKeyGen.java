@@ -4,6 +4,14 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 /**
+ * Random UUID generator optimized for range partitioning.
+ *
+ * Each generated value consists of a random prefix of the specified length,
+ * date code of 14 bits, followed by the random suffix.
+ *
+ * In addition, the generator supports the "fixed prefix" schema, in which a
+ * common prefix value is used for a series of related ids generated (typically
+ * to be written in a single transaction).
  *
  * @author zinal
  */
@@ -11,10 +19,21 @@ public class UuidKeyGen {
 
     private final int maskPos;
 
+    /**
+     * Constructs the generator instance with the default prefix size of 12
+     * bits.
+     *
+     * Works best for up to 4k table partitions.
+     */
     public UuidKeyGen() {
         this(12);
     }
 
+    /**
+     * Constructs the generator instance with the custom prefix size.
+     *
+     * @param prefixBits Number of bits for the prefix, 1 to 31 bits.
+     */
     public UuidKeyGen(int prefixBits) {
         if (prefixBits < 1 || prefixBits > 31) {
             throw new IllegalArgumentException("Unsupported prefix length: " + prefixBits);
@@ -22,12 +41,22 @@ public class UuidKeyGen {
         this.maskPos = prefixBits - 1;
     }
 
+    /**
+     * Generates the new shared prefix to generate a series of related IDs.
+     *
+     * @return 64-bit random value to be used as a prefix.
+     */
     public long nextPrefix() {
         UUID v = UUID.randomUUID();
         return v.getMostSignificantBits();
-
     }
 
+    /**
+     * Generates the new ID with the specified prefix value.
+     *
+     * @param prefix Prefix value
+     * @return Random UUID with the embedded prefix, date code and suffix.
+     */
     public UUID nextValue(long prefix) {
         UUID v = UUID.randomUUID();
         long prefixMask = Holder.prefixMasks[maskPos];
@@ -39,6 +68,11 @@ public class UuidKeyGen {
         return new UUID(bits, v.getLeastSignificantBits());
     }
 
+    /**
+     * Generates the new ID with the random prefix value.
+     *
+     * @return Random UUID with the embedded prefix, date code and suffix.
+     */
     public UUID nextValue() {
         return nextValue(nextPrefix());
     }
