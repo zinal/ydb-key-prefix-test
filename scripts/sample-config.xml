@@ -8,6 +8,8 @@
     <entry key="ddl.file">sample-ddl.sql</entry>
     <entry key="gen.salt">somerandomsaltvalue</entry>
     <entry key="gen.scale">1000</entry>
+    <entry key="gen.start">2021-01-01</entry>
+    <entry key="gen.finish">2030-12-31</entry>
     <entry key="gen.threads">100</entry>
     <entry key="test.threads">100</entry>
 </properties>

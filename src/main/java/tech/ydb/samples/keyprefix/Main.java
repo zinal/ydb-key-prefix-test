@@ -4,7 +4,11 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Properties;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -36,16 +40,39 @@ public class Main implements AutoCloseable {
     }
 
     public void init() throws Exception {
+        LOG.info("Init started...");
         runDdlScript();
-        loadData();
+        LOG.info("Init successfull!");
     }
 
     public void clean() throws Exception {
+        LOG.info("Cleanup started...");
         dropTables();
+        LOG.info("Cleanup successfull!");
+    }
+
+    public void fill() throws Exception {
+        LOG.info("Fill started...");
+        try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
+            var tasks = new ArrayList<Future<?>>();
+            // one task per date
+            LocalDate current = config.getGeneratorStart();
+            while (!current.isAfter(config.getGeneratorFinish())) {
+                LocalDate dt = current;
+                var task = service.submit(() -> fillDate(dt));
+                tasks.add(task);
+                current = current.plusDays(1);
+            }
+            for (var task : tasks) {
+                task.get();
+            }
+        }
+        LOG.info("Fill successful!");
     }
 
     public void test() throws Exception {
-
+        LOG.info("Test started...");
+        LOG.info("Test successful!");
     }
 
     public static void main(String[] args) {
@@ -61,6 +88,9 @@ public class Main implements AutoCloseable {
                 switch (action) {
                     case INIT: {
                         m.init();
+                    }
+                    case FILL: {
+                        m.fill();
                     }
                     case TEST: {
                         m.test();
@@ -103,7 +133,15 @@ public class Main implements AutoCloseable {
         config.setSalt(props.getProperty("gen.salt"));
         v = props.getProperty("gen.scale");
         if (v != null) {
-            config.setScale(Integer.parseInt(v));
+            config.setGeneratorScale(Integer.parseInt(v));
+        }
+        v = props.getProperty("gen.start");
+        if (v != null) {
+            config.setGeneratorStart(LocalDate.parse(v));
+        }
+        v = props.getProperty("gen.finish");
+        if (v != null) {
+            config.setGeneratorFinish(LocalDate.parse(v));
         }
         v = props.getProperty("gen.threads");
         if (v != null) {
@@ -145,8 +183,10 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private void loadData() throws Exception {
+    private void fillDate(LocalDate dt) {
+        LOG.info("Filling data for {}...", dt);
 
+        LOG.info("Completed filling data for {}.", dt);
     }
 
     public static final class WorkerFactory implements ThreadFactory {
@@ -164,6 +204,7 @@ public class Main implements AutoCloseable {
 
     public enum Action {
         INIT,
+        FILL,
         TEST,
         CLEAN
     }
@@ -175,7 +216,9 @@ public class Main implements AutoCloseable {
         private String password;
         private String ddlFile;
         private String salt;
-        private int scale = 1;
+        private int generatorScale = 1;
+        private LocalDate generatorStart;
+        private LocalDate generatorFinish;
         private int generatorThreads = 4;
         private int testThreads = 4;
 
@@ -219,12 +262,28 @@ public class Main implements AutoCloseable {
             this.salt = salt;
         }
 
-        public int getScale() {
-            return scale;
+        public int getGeneratorScale() {
+            return generatorScale;
         }
 
-        public void setScale(int scale) {
-            this.scale = scale;
+        public void setGeneratorScale(int generatorScale) {
+            this.generatorScale = generatorScale;
+        }
+
+        public LocalDate getGeneratorStart() {
+            return generatorStart;
+        }
+
+        public void setGeneratorStart(LocalDate generatorStart) {
+            this.generatorStart = generatorStart;
+        }
+
+        public LocalDate getGeneratorFinish() {
+            return generatorFinish;
+        }
+
+        public void setGeneratorFinish(LocalDate generatorFinish) {
+            this.generatorFinish = generatorFinish;
         }
 
         public int getGeneratorThreads() {
