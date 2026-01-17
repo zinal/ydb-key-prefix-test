@@ -247,8 +247,9 @@ public class Main implements AutoCloseable {
         // 5 iterations for 200 lines each
         for (int i = 0; i < 5; ++i) {
             long prefix = newPrefix();
+            var tv = newTv(dt);
             var entries = IntStream.range(0, 200)
-                    .mapToObj(ix -> newDataEntry(prefix, dt))
+                    .mapToObj(ix -> newDataEntry(ix, prefix, dt, tv))
                     .toList();
             String sql = """
     INSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
@@ -282,12 +283,12 @@ public class Main implements AutoCloseable {
         con.commit();
     }
 
-    private DataEntry newDataEntry(long prefix, LocalDate dt) {
+    private DataEntry newDataEntry(int ix, long prefix, LocalDate dt, Instant tv) {
         var de = new DataEntry();
         de.mainId = newId(prefix, dt);
         de.subId = newId(prefix, dt);
         de.refId = newId(prefix, dt);
-        de.tv = newTv(dt);
+        de.tv = tv.plus(ix * 10L, ChronoUnit.SECONDS);
         de.ballast1 = newBallast();
         de.ballast2 = newBallast();
         return de;
