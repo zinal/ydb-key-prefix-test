@@ -1,22 +1,32 @@
 package tech.ydb.samples.keyprefix;
 
 import java.io.FileInputStream;
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.Connection;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 
 /**
  *
@@ -28,10 +38,16 @@ public class Main implements AutoCloseable {
 
     private final Config config;
     private final HikariDataSource ds;
+    private final TextKeyGen keyGen;
+    private final ArrayList<String> ballastLines;
+    private final ZoneId timeZone;
 
     public Main(Config sc) {
         this.config = sc;
         this.ds = createDataSource(sc);
+        this.keyGen = new TextKeyGen();
+        this.ballastLines = readBallastLines(sc.getBallastFile());
+        this.timeZone = ZoneId.of("Europe/Moscow");
     }
 
     @Override
@@ -130,7 +146,11 @@ public class Main implements AutoCloseable {
         config.setLogin(props.getProperty("ydb.user"));
         config.setPassword(props.getProperty("ydb.password"));
         config.setDdlFile(props.getProperty("ddl.file"));
-        config.setSalt(props.getProperty("gen.salt"));
+        config.setBallastFile(props.getProperty("gen.ballast.file"));
+        v = props.getProperty("gen.ids.smart");
+        if (v != null) {
+            config.setGeneratorSmartIds(Boolean.parseBoolean(v));
+        }
         v = props.getProperty("gen.scale");
         if (v != null) {
             config.setGeneratorScale(Integer.parseInt(v));
@@ -150,6 +170,10 @@ public class Main implements AutoCloseable {
         v = props.getProperty("test.threads");
         if (v != null) {
             config.setTestThreads(Integer.parseInt(v));
+        }
+        v = props.getProperty("retry.count");
+        if (v != null) {
+            config.setRetryCount(Integer.parseInt(v));
         }
         return config;
     }
@@ -185,21 +209,146 @@ public class Main implements AutoCloseable {
 
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
-
+        for (int i = 0; i < config.getGeneratorScale(); ++i) {
+            fillDateStepRetry(dt, i);
+        }
         LOG.info("Completed filling data for {}.", dt);
     }
 
-    public static final class WorkerFactory implements ThreadFactory {
-
-        private final AtomicInteger counter = new AtomicInteger();
-
-        @Override
-        public Thread newThread(Runnable r) {
-            int workerId = counter.getAndIncrement();
-            final Thread t = new Thread(r, "YdbImporter-worker-" + workerId);
-            t.setDaemon(false);
-            return t;
+    private int fillDateStepRetry(LocalDate dt, int iteration) {
+        Throwable reason = null;
+        for (int retryCount = 0; retryCount < config.getRetryCount() + 1; ++retryCount) {
+            try (var conn = ds.getConnection()) {
+                fillDateStep(conn, dt, iteration);
+                return retryCount;
+            } catch (Exception ex) {
+                reason = ex;
+            }
         }
+        throw new RuntimeException("Fill iteration failed: retry count exceeded", reason);
+    }
+
+    private void fillDateStep(Connection con, LocalDate dt, int iteration) throws Exception {
+        // 5 iterations for 200 lines each
+        for (int i = 0; i < 5; ++i) {
+            long prefix = newPrefix();
+            var entries = IntStream.range(0, 200)
+                    .mapToObj(ix -> newDataEntry(prefix, dt))
+                    .toList();
+            String sql = """
+    INSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
+    VALUES (?, ?, ?, ?);
+    """;
+            try (var ps = con.prepareStatement(sql)) {
+                for (var entry : entries) {
+                    ps.setString(1, entry.mainId);
+                    ps.setString(2, entry.refId);
+                    ps.setTimestamp(3, Timestamp.from(entry.tv));
+                    ps.setString(4, entry.ballast1);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+            sql = """
+    INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
+    VALUES (?, ?, ?, ?);
+    """;
+            try (var ps = con.prepareStatement(sql)) {
+                for (var entry : entries) {
+                    ps.setString(1, entry.subId);
+                    ps.setString(2, entry.refId);
+                    ps.setTimestamp(3, Timestamp.from(entry.tv));
+                    ps.setString(4, entry.ballast2);
+                    ps.addBatch();
+                }
+                ps.executeBatch();
+            }
+        }
+        con.commit();
+    }
+
+    private DataEntry newDataEntry(long prefix, LocalDate dt) {
+        var de = new DataEntry();
+        de.mainId = newId(prefix, dt);
+        de.subId = newId(prefix, dt);
+        de.refId = newId(prefix, dt);
+        de.tv = newTv(dt);
+        de.ballast1 = newBallast();
+        de.ballast2 = newBallast();
+        return de;
+    }
+
+    private Instant newTv(LocalDate dt) {
+        ZonedDateTime tv = dt.atStartOfDay(timeZone);
+        long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 24L);
+        tv = tv.plus(seconds, ChronoUnit.SECONDS);
+        return tv.toInstant();
+    }
+
+    private String newBallast() {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getBallastLine());
+        while (sb.length() < 1000) {
+            sb.append(", ");
+            sb.append(getBallastLine());
+        }
+        return sb.toString();
+    }
+
+    private String getBallastLine() {
+        int pos = ThreadLocalRandom.current().nextInt(0, ballastLines.size());
+        return ballastLines.get(pos);
+    }
+
+    private long newPrefix() {
+        return keyGen.nextPrefix();
+    }
+
+    private String newId(long prefix, LocalDate dt) {
+        if (config.isGeneratorSmartIds()) {
+            return keyGen.nextValue(prefix, dt);
+        } else {
+            UUID uuid = UUID.randomUUID();
+            ByteBuffer byteArray = ByteBuffer.allocate(16);
+            byteArray.putLong(uuid.getMostSignificantBits());
+            byteArray.putLong(uuid.getLeastSignificantBits());
+            String temp1 = Base64.getUrlEncoder()
+                    .encodeToString(byteArray.array())
+                    .substring(0, 22);
+            byteArray = ByteBuffer.allocate(8);
+            byteArray.putLong(prefix);
+            String temp2 = Base64.getUrlEncoder()
+                    .encodeToString(byteArray.array());
+            return temp2.substring(0, 4) + temp1.substring(4);
+        }
+    }
+
+    private static ArrayList<String> readBallastLines(String fname) {
+        if (fname == null) {
+            return new ArrayList<>();
+        }
+        var lines = new ArrayList<String>();
+        try {
+            var temp = Files.readAllLines(Path.of(fname), StandardCharsets.UTF_8);
+            temp.stream()
+                    .filter(v -> (v != null) && v.length() > 1)
+                    .distinct()
+                    .sorted()
+                    .forEach(v -> lines.add(v));
+        } catch (IOException ix) {
+            throw new RuntimeException("Failed to read file " + fname, ix);
+        }
+        return lines;
+    }
+
+    public static final class DataEntry {
+
+        String mainId;
+        String subId;
+        String refId;
+        Instant tv;
+        String ballast1;
+        String ballast2;
     }
 
     public enum Action {
@@ -215,12 +364,14 @@ public class Main implements AutoCloseable {
         private String login;
         private String password;
         private String ddlFile;
-        private String salt;
+        private String ballastFile;
+        private boolean generatorSmartIds = true;
         private int generatorScale = 1;
         private LocalDate generatorStart;
         private LocalDate generatorFinish;
         private int generatorThreads = 4;
         private int testThreads = 4;
+        private int retryCount = 10;
 
         public String getUrl() {
             return url;
@@ -254,12 +405,20 @@ public class Main implements AutoCloseable {
             this.ddlFile = ddlFile;
         }
 
-        public String getSalt() {
-            return salt;
+        public String getBallastFile() {
+            return ballastFile;
         }
 
-        public void setSalt(String salt) {
-            this.salt = salt;
+        public void setBallastFile(String ballastFile) {
+            this.ballastFile = ballastFile;
+        }
+
+        public boolean isGeneratorSmartIds() {
+            return generatorSmartIds;
+        }
+
+        public void setGeneratorSmartIds(boolean generatorSmartIds) {
+            this.generatorSmartIds = generatorSmartIds;
         }
 
         public int getGeneratorScale() {
@@ -300,6 +459,14 @@ public class Main implements AutoCloseable {
 
         public void setTestThreads(int testThreads) {
             this.testThreads = testThreads;
+        }
+
+        public int getRetryCount() {
+            return retryCount;
+        }
+
+        public void setRetryCount(int retryCount) {
+            this.retryCount = retryCount;
         }
 
     }
