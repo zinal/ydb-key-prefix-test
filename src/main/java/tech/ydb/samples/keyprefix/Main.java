@@ -95,7 +95,7 @@ public class Main implements AutoCloseable {
 
     public static void main(String[] args) {
         if (args.length != 2) {
-            LOG.info("Two arguments are expected: config-file.xml { INIT | TEST | CLEAN }");
+            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST | CLEAN }");
             System.exit(2);
         }
         try {
@@ -104,16 +104,16 @@ public class Main implements AutoCloseable {
             var config = readConfig(args[0]);
             try (var m = new Main(config)) {
                 switch (action) {
-                    case INIT: {
+                    case INIT -> {
                         m.init();
                     }
-                    case FILL: {
+                    case FILL -> {
                         m.fill();
                     }
-                    case TEST: {
+                    case TEST -> {
                         m.test();
                     }
-                    case CLEAN: {
+                    case CLEAN -> {
                         m.clean();
                     }
                 }
