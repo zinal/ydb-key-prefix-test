@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -187,7 +188,7 @@ public class Main implements AutoCloseable {
 
     private void testTask(LocalDate testDay) {
         for (int iter = 0; iter < config.getTestIterations(); ++iter) {
-            runWithRetry((con) -> testTaskIter(con, testDay));
+            runWithRetry(true, (con) -> testTaskIter(con, testDay));
             completed.incrementAndGet();
         }
     }
@@ -244,7 +245,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
         for (int i = 0; i < config.getGeneratorScale(); ++i) {
-            runWithRetry((con) -> fillDateStep(con, dt));
+            runWithRetry(false, (con) -> fillDateStep(con, dt));
             completed.incrementAndGet();
         }
         LOG.info("Completed filling data for {}.", dt);
@@ -287,7 +288,6 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 ps.executeBatch();
             }
         }
-        con.commit();
     }
 
     private DataEntry newDataEntry(int ix, long prefix, LocalDate dt, Instant tv) {
@@ -364,11 +364,25 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         return lines;
     }
 
-    private int runWithRetry(ExConsumer<Connection> action) {
+    private int runWithRetry(boolean readonly, ExConsumer<Connection> action) {
         Throwable reason = null;
         for (int retryCount = 0; retryCount < config.getRetryCount() + 1; ++retryCount) {
             try (var conn = ds.getConnection()) {
-                action.accept(conn);
+                try {
+                    if (readonly) {
+                        conn.setReadOnly(true);
+                    }
+                    action.accept(conn);
+                    conn.commit();
+                } finally {
+                    if (readonly) {
+                        try {
+                            conn.setReadOnly(false);
+                        } catch (SQLException ex) {
+                            LOG.warn("Failed to re-set the read only state", ex);
+                        }
+                    }
+                }
                 return retryCount;
             } catch (Exception ex) {
                 if (ex instanceof YdbRetryableException
