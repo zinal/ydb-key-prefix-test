@@ -73,10 +73,10 @@ public class Main implements AutoCloseable {
     }
 
     public void fill() throws Exception {
-        LOG.info("Fill started...");
-        completed.set(0L);
         try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
+            LOG.info("Submitting fill tasks...");
             var tasks = new ArrayList<Future<?>>();
+            completed.set(0L);
             // one task per date
             LocalDate current = config.getGeneratorStart();
             while (!current.isAfter(config.getGeneratorFinish())) {
@@ -85,14 +85,29 @@ public class Main implements AutoCloseable {
                 tasks.add(task);
                 current = current.plusDays(1);
             }
+            LOG.info("Fill started...");
             waitForCompletion(tasks);
+            LOG.info("Fill successful!");
         }
-        LOG.info("Fill successful!");
     }
 
     public void test() throws Exception {
-        LOG.info("Test started...");
-        LOG.info("Test successful!");
+        try (var service = Executors.newFixedThreadPool(config.getTestThreads())) {
+            LOG.info("Submitting test tasks...");
+            var tasks = new ArrayList<Future<?>>();
+            completed.set(0L);
+            var startedAt = Instant.now();
+            LocalDate testDay = config.getTestDay();
+            for (int i = 0; i < config.getTestThreads(); ++i) {
+                var task = service.submit(() -> testTask(testDay));
+                tasks.add(task);
+            }
+            LOG.info("Test started...");
+            waitForCompletion(tasks);
+            long elapsedSeconds = startedAt.until(Instant.now(), ChronoUnit.SECONDS);
+            LOG.info("Test successful, total {} iterations in {} seconds!",
+                    completed.get(), elapsedSeconds);
+        }
     }
 
     public static void main(String[] args) {
@@ -105,6 +120,7 @@ public class Main implements AutoCloseable {
             LOG.info("Reading configuration {}...", args[0]);
             var config = readConfig(args[0]);
             try (var m = new Main(config)) {
+                LOG.info("Initialized, executing {}.", action);
                 switch (action) {
                     case INIT -> {
                         m.init();
@@ -120,6 +136,7 @@ public class Main implements AutoCloseable {
                     }
                 }
             }
+            LOG.info("Completed, shutting down.");
         } catch (Exception ex) {
             LOG.error("FATAL", ex);
             System.exit(1);
@@ -137,49 +154,6 @@ public class Main implements AutoCloseable {
         hc.setPassword(sc.getPassword());
         hc.setMaximumPoolSize(maxConnections);
         return new HikariDataSource(hc);
-    }
-
-    public static Config readConfig(String fname) throws Exception {
-        var props = new Properties();
-        try (var fis = new FileInputStream(fname)) {
-            props.loadFromXML(fis);
-        }
-        String v;
-        var config = new Config();
-        config.setUrl(props.getProperty("ydb.url"));
-        config.setLogin(props.getProperty("ydb.user"));
-        config.setPassword(props.getProperty("ydb.password"));
-        config.setDdlFile(props.getProperty("ddl.file"));
-        config.setBallastFile(props.getProperty("gen.ballast.file"));
-        v = props.getProperty("gen.ids.smart");
-        if (v != null) {
-            config.setGeneratorSmartIds(Boolean.parseBoolean(v));
-        }
-        v = props.getProperty("gen.scale");
-        if (v != null) {
-            config.setGeneratorScale(Integer.parseInt(v));
-        }
-        v = props.getProperty("gen.start");
-        if (v != null) {
-            config.setGeneratorStart(LocalDate.parse(v));
-        }
-        v = props.getProperty("gen.finish");
-        if (v != null) {
-            config.setGeneratorFinish(LocalDate.parse(v));
-        }
-        v = props.getProperty("gen.threads");
-        if (v != null) {
-            config.setGeneratorThreads(Integer.parseInt(v));
-        }
-        v = props.getProperty("test.threads");
-        if (v != null) {
-            config.setTestThreads(Integer.parseInt(v));
-        }
-        v = props.getProperty("retry.count");
-        if (v != null) {
-            config.setRetryCount(Integer.parseInt(v));
-        }
-        return config;
     }
 
     private void runDdlScript() throws Exception {
@@ -211,39 +185,72 @@ public class Main implements AutoCloseable {
         }
     }
 
+    private void testTask(LocalDate testDay) {
+        for (int iter = 0; iter < config.getTestIterations(); ++iter) {
+            runWithRetry((con) -> testTaskIter(con, testDay));
+            completed.incrementAndGet();
+        }
+    }
+
+    private void testTaskIter(Connection con, LocalDate testDay) throws Exception {
+        long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 23L);
+        var tv = testDay.atStartOfDay(timeZone).plus(seconds, ChronoUnit.SECONDS);
+        Timestamp ts = Timestamp.from(tv.toInstant());
+        String sql;
+
+        sql = """
+SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2
+FROM (SELECT id
+      FROM `key_prefix_demo/main` VIEW ix_tv
+      WHERE tv >= ?
+      ORDER BY tv LIMIT 200) AS main_ids
+INNER JOIN `key_prefix_demo/main` AS main
+    ON main_ids.id = main.id
+LEFT JOIN `key_prefix_demo/sub` VIEW ix_ref AS sub
+    ON sub.ref_id = main.collection_id;
+              """;
+        try (var ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, ts);
+            try (var rs = ps.executeQuery()) {
+                int rows = 0;
+                while (rs.next()) {
+                    ++rows;
+                }
+            }
+        }
+
+        sql = """
+SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2
+FROM (SELECT id
+      FROM `key_prefix_demo/sub` VIEW ix_tv
+      WHERE tv >= ?
+      ORDER BY tv LIMIT 200) AS sub_ids
+INNER JOIN `key_prefix_demo/sub` AS sub
+    ON sub_ids.id = sub.id
+LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
+    ON sub.ref_id = main.collection_id;
+              """;
+        try (var ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, ts);
+            try (var rs = ps.executeQuery()) {
+                int rows = 0;
+                while (rs.next()) {
+                    ++rows;
+                }
+            }
+        }
+    }
+
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
         for (int i = 0; i < config.getGeneratorScale(); ++i) {
-            fillDateStepRetry(dt, i);
+            runWithRetry((con) -> fillDateStep(con, dt));
             completed.incrementAndGet();
         }
         LOG.info("Completed filling data for {}.", dt);
     }
 
-    private int fillDateStepRetry(LocalDate dt, int iteration) {
-        Throwable reason = null;
-        for (int retryCount = 0; retryCount < config.getRetryCount() + 1; ++retryCount) {
-            try (var conn = ds.getConnection()) {
-                fillDateStep(conn, dt, iteration);
-                return retryCount;
-            } catch (Exception ex) {
-                if (ex instanceof YdbRetryableException
-                        || ex instanceof YdbConditionallyRetryableException) {
-                    reason = ex;
-                    try {
-                        Thread.sleep(ThreadLocalRandom.current().nextLong(100L, 500L));
-                    } catch (InterruptedException ix) {
-                        Thread.currentThread().interrupt();
-                    }
-                } else {
-                    throw new RuntimeException("Fill iteration failed: non-retryable exception", ex);
-                }
-            }
-        }
-        throw new RuntimeException("Fill iteration failed: retry count exceeded", reason);
-    }
-
-    private void fillDateStep(Connection con, LocalDate dt, int iteration) throws Exception {
+    private void fillDateStep(Connection con, LocalDate dt) throws Exception {
         // 5 iterations for 200 lines each
         for (int i = 0; i < 5; ++i) {
             long prefix = newPrefix();
@@ -343,7 +350,7 @@ public class Main implements AutoCloseable {
         if (fname == null) {
             return new ArrayList<>();
         }
-        var lines = new ArrayList<String>();
+        ArrayList<String> lines = new ArrayList<>();
         try {
             var temp = Files.readAllLines(Path.of(fname), StandardCharsets.UTF_8);
             temp.stream()
@@ -357,6 +364,29 @@ public class Main implements AutoCloseable {
         return lines;
     }
 
+    private int runWithRetry(ExConsumer<Connection> action) {
+        Throwable reason = null;
+        for (int retryCount = 0; retryCount < config.getRetryCount() + 1; ++retryCount) {
+            try (var conn = ds.getConnection()) {
+                action.accept(conn);
+                return retryCount;
+            } catch (Exception ex) {
+                if (ex instanceof YdbRetryableException
+                        || ex instanceof YdbConditionallyRetryableException) {
+                    reason = ex;
+                    try {
+                        Thread.sleep(ThreadLocalRandom.current().nextLong(100L, 500L));
+                    } catch (InterruptedException ix) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    throw new RuntimeException("Fill iteration failed: non-retryable exception", ex);
+                }
+            }
+        }
+        throw new RuntimeException("Fill iteration failed: retry count exceeded", reason);
+    }
+
     private void waitForCompletion(ArrayList<Future<?>> tasks) {
         var lastReported = Instant.now();
         while (true) {
@@ -366,18 +396,77 @@ public class Main implements AutoCloseable {
             if (completedCount >= tasks.size()) {
                 break;
             }
+            int runningCount = (int) tasks.stream()
+                    .filter(f -> f.state() == Future.State.RUNNING)
+                    .count();
             var now = Instant.now();
             if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
                 lastReported = now;
-                LOG.info("Completed {} of {} ({} of {} parts)",
-                        completedCount, tasks.size(),
-                        completed.get(), 1000L * tasks.size());
+                LOG.info("Completed {} of {} / {}, {} parts",
+                        completedCount, tasks.size(), runningCount, completed.get());
             }
             try {
-                Thread.sleep(200L);
+                Thread.sleep(300L);
             } catch (InterruptedException ix) {
             }
         }
+    }
+
+    public static Config readConfig(String fname) throws Exception {
+        var props = new Properties();
+        try (var fis = new FileInputStream(fname)) {
+            props.loadFromXML(fis);
+        }
+        String v;
+        var config = new Config();
+        config.setUrl(props.getProperty("ydb.url"));
+        config.setLogin(props.getProperty("ydb.user"));
+        config.setPassword(props.getProperty("ydb.password"));
+        config.setDdlFile(props.getProperty("ddl.file"));
+        config.setBallastFile(props.getProperty("gen.ballast.file"));
+        v = props.getProperty("gen.ids.smart");
+        if (v != null) {
+            config.setGeneratorSmartIds(Boolean.parseBoolean(v));
+        }
+        v = props.getProperty("gen.scale");
+        if (v != null) {
+            config.setGeneratorScale(Integer.parseInt(v));
+        }
+        v = props.getProperty("gen.start");
+        if (v != null) {
+            config.setGeneratorStart(LocalDate.parse(v));
+        }
+        v = props.getProperty("gen.finish");
+        if (v != null) {
+            config.setGeneratorFinish(LocalDate.parse(v));
+        }
+        v = props.getProperty("gen.threads");
+        if (v != null) {
+            config.setGeneratorThreads(Integer.parseInt(v));
+        }
+        v = props.getProperty("test.threads");
+        if (v != null) {
+            config.setTestThreads(Integer.parseInt(v));
+        }
+        v = props.getProperty("test.day");
+        if (v != null) {
+            config.setTestDay(LocalDate.parse(v));
+        }
+        v = props.getProperty("test.iterations");
+        if (v != null) {
+            config.setTestIterations(Integer.parseInt(v));
+        }
+        v = props.getProperty("retry.count");
+        if (v != null) {
+            config.setRetryCount(Integer.parseInt(v));
+        }
+        return config;
+    }
+
+    @FunctionalInterface
+    public static interface ExConsumer<T> {
+
+        void accept(T t) throws Exception;
     }
 
     public static final class DataEntry {
@@ -410,6 +499,8 @@ public class Main implements AutoCloseable {
         private LocalDate generatorFinish;
         private int generatorThreads = 4;
         private int testThreads = 4;
+        private LocalDate testDay;
+        private int testIterations = 100;
         private int retryCount = 10;
 
         public String getUrl() {
@@ -498,6 +589,22 @@ public class Main implements AutoCloseable {
 
         public void setTestThreads(int testThreads) {
             this.testThreads = testThreads;
+        }
+
+        public LocalDate getTestDay() {
+            return testDay;
+        }
+
+        public void setTestDay(LocalDate testDay) {
+            this.testDay = testDay;
+        }
+
+        public int getTestIterations() {
+            return testIterations;
+        }
+
+        public void setTestIterations(int testIterations) {
+            this.testIterations = testIterations;
         }
 
         public int getRetryCount() {

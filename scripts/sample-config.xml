@@ -7,13 +7,17 @@
     <entry key="ydb.password">password123</entry>
     <entry key="ddl.file">sample-ddl.sql</entry>
     <entry key="gen.ballast.file">professions.txt</entry>
+    <entry key="retry.count">10</entry>
+
     <!-- Generate smart or dumb ids -->
     <entry key="gen.ids.smart">true</entry>
     <!-- scale is defined in 1000s records per day per table -->
     <entry key="gen.scale">1000</entry>
     <entry key="gen.start">2021-01-01</entry>
-    <entry key="gen.finish">2030-12-31</entry>
+    <entry key="gen.finish">2024-12-31</entry>
     <entry key="gen.threads">100</entry>
-    <entry key="test.threads">100</entry>
-    <entry key="retry.count">10</entry>
+
+    <entry key="test.threads">50</entry>
+    <entry key="test.day">2024-12-20</entry>
+    <entry key="test.iterations">10000</entry>
 </properties>
