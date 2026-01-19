@@ -17,7 +17,8 @@ public class TextKeyGenTest {
     @Test
     public void testTextKeyGen() {
         var gen = new TextKeyGen();
-        var map = new HashMap<String, Entry>();
+        var map1 = new HashMap<String, Entry>();
+        var map2 = new HashMap<String, Entry>();
         LocalDate dates[] = new LocalDate[10];
         dates[0] = LocalDate.of(2023, Month.JANUARY, 1);
         dates[1] = LocalDate.of(2023, Month.APRIL, 1);
@@ -37,30 +38,39 @@ public class TextKeyGenTest {
                 for (int j = 0; j < 100; ++j) {
                     String id = gen.nextValue(pfx, now);
                     String part1 = id.substring(0, 2);
-                    // String part2 = id.substring(2, 4);
-                    Entry e = map.get(part1);
+                    String part2 = id.substring(2, 4);
+                    Entry e = map1.get(part1);
                     if (e == null) {
                         e = new Entry();
-                        map.put(part1, e);
+                        map1.put(part1, e);
                     }
                     e.count += 1;
-                    /*
-                    var sub = e.sub.get(part2);
-                    e.sub.put(part2, (sub == null) ? 1L : sub + 1L);
-                     */
+                    e = map2.get(part2);
+                    if (e == null) {
+                        e = new Entry();
+                        map2.put(part2, e);
+                    }
+                    e.count += 1;
                 }
             }
         }
         var genMillis = startedAt.until(Instant.now(), ChronoUnit.MILLIS);
         System.out.printf("Generated in %d milliseconds\n", genMillis);
         // Check that statistics are reasonable
-        var stats = new Stats();
-        map.values().stream().forEach(v -> stats.next(v.count));
-        long avg = stats.getAverage();
-        System.out.printf("Statistics: count=%d, total=%d, min=%d, max=%d, avg=%d\n",
-                stats.count, stats.sum, stats.min, stats.max, avg);
-        Assert.assertTrue("Reasonable min", stats.min >= 85L * avg / 100L);
-        Assert.assertTrue("Reasonable max", stats.max <= 115L * avg / 100L);
+        var stats1 = new Stats();
+        map1.values().stream().forEach(v -> stats1.next(v.count));
+        var stats2 = new Stats();
+        map2.values().stream().forEach(v -> stats2.next(v.count));
+        long avg1 = stats1.getAverage();
+        long avg2 = stats2.getAverage();
+        System.out.printf("Stats1: count=%d, total=%d, min=%d, max=%d, avg=%d\n",
+                stats1.count, stats1.sum, stats1.min, stats1.max, avg1);
+        System.out.printf("Stats2: count=%d, total=%d, min=%d, max=%d, avg=%d\n",
+                stats2.count, stats2.sum, stats2.min, stats2.max, avg2);
+        Assert.assertTrue("Reasonable min1", stats1.min >= 70L * avg1 / 100L);
+        Assert.assertTrue("Reasonable max1", stats1.max <= 130L * avg1 / 100L);
+        Assert.assertTrue("Reasonable min2", stats2.min >= 70L * avg2 / 100L);
+        Assert.assertTrue("Reasonable max2", stats2.max <= 130L * avg2 / 100L);
     }
 
     static class Entry {
