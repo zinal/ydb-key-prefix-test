@@ -111,9 +111,16 @@ public class Main implements AutoCloseable {
         }
     }
 
+    public void print() {
+        var gen = new TextKeyGen();
+        while (true) {
+            System.out.println(gen.nextValue());
+        }
+    }
+
     public static void main(String[] args) {
         if (args.length != 2) {
-            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST | CLEAN }");
+            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST | CLEAN | PRINT }");
             System.exit(2);
         }
         try {
@@ -134,6 +141,9 @@ public class Main implements AutoCloseable {
                     }
                     case CLEAN -> {
                         m.clean();
+                    }
+                    case PRINT -> {
+                        m.print();
                     }
                 }
             }
@@ -497,7 +507,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         INIT,
         FILL,
         TEST,
-        CLEAN
+        CLEAN,
+        PRINT
     }
 
     public static final class Config {
