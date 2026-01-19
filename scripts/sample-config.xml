@@ -17,7 +17,8 @@
     <entry key="gen.finish">2024-12-31</entry>
     <entry key="gen.threads">100</entry>
 
-    <entry key="test.threads">50</entry>
+    <entry key="test.threads">10</entry>
     <entry key="test.day">2024-12-20</entry>
-    <entry key="test.iterations">10000</entry>
+    <entry key="test.iterations">500000</entry>
+    <entry key="test.rows">10000</entry>
 </properties>

@@ -214,7 +214,7 @@ SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2
 FROM (SELECT id
       FROM `key_prefix_demo/main` VIEW ix_tv
       WHERE tv >= ?
-      ORDER BY tv LIMIT 200) AS main_ids
+      ORDER BY tv LIMIT ?) AS main_ids
 INNER JOIN `key_prefix_demo/main` AS main
     ON main_ids.id = main.id
 LEFT JOIN `key_prefix_demo/sub` VIEW ix_ref AS sub
@@ -222,6 +222,7 @@ LEFT JOIN `key_prefix_demo/sub` VIEW ix_ref AS sub
               """;
         try (var ps = con.prepareStatement(sql)) {
             ps.setTimestamp(1, ts);
+            ps.setInt(2, config.getTestRows());
             try (var rs = ps.executeQuery()) {
                 int rows = 0;
                 while (rs.next()) {
@@ -235,7 +236,7 @@ SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2
 FROM (SELECT id
       FROM `key_prefix_demo/sub` VIEW ix_tv
       WHERE tv >= ?
-      ORDER BY tv LIMIT 200) AS sub_ids
+      ORDER BY tv LIMIT ?) AS sub_ids
 INNER JOIN `key_prefix_demo/sub` AS sub
     ON sub_ids.id = sub.id
 LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
@@ -243,6 +244,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
               """;
         try (var ps = con.prepareStatement(sql)) {
             ps.setTimestamp(1, ts);
+            ps.setInt(2, config.getTestRows());
             try (var rs = ps.executeQuery()) {
                 int rows = 0;
                 while (rs.next()) {
@@ -472,6 +474,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         if (v != null) {
             config.setTestThreads(Integer.parseInt(v));
         }
+        v = props.getProperty("test.rows");
+        if (v != null) {
+            config.setTestRows(Integer.parseInt(v));
+        }
         v = props.getProperty("test.day");
         if (v != null) {
             config.setTestDay(LocalDate.parse(v));
@@ -524,6 +530,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         private LocalDate generatorFinish;
         private int generatorThreads = 4;
         private int testThreads = 4;
+        private int testRows = 10000;
         private LocalDate testDay;
         private int testIterations = 100;
         private int retryCount = 10;
@@ -614,6 +621,14 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
         public void setTestThreads(int testThreads) {
             this.testThreads = testThreads;
+        }
+
+        public int getTestRows() {
+            return testRows;
+        }
+
+        public void setTestRows(int testRows) {
+            this.testRows = testRows;
         }
 
         public LocalDate getTestDay() {
