@@ -72,11 +72,12 @@ public class UuidKeyGen {
     }
 
     /**
-     * Generates the new ID with the specified prefix value and date.
+     * Generates the new ID with the specified prefix value and calendar date
+     * (UTC midnight).
      *
      * @param prefix Prefix value
-     * @param date The date to be used for the generated value
-     * @return Random UUID with the embedded prefix, date code and suffix.
+     * @param date The date whose start-of-day UTC instant is embedded
+     * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(long prefix, LocalDate date) {
         return nextValue(prefix, date.atStartOfDay(ZoneOffset.UTC).toInstant());
