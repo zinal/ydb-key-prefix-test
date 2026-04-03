@@ -10,19 +10,21 @@ import org.junit.Test;
 public class GenericTest {
 
     static final long prefixMasks[];
-    static final long dateMasks[];
+    static final long timestampMasks[];
 
     static {
         long pf[] = new long[32];
-        long dt[] = new long[32];
+        long ts[] = new long[32];
+        int tsBits = UuidKeyGen.TIMESTAMP_BITS;
+        int tsLowBit = 33;
         pf[0] = 0x8000000000000000L;
-        dt[0] = (0xFFFC000000000000L >>> 1);
+        ts[0] = (((1L << tsBits) - 1) << tsLowBit);
         for (int i = 1; i < 32; ++i) {
             pf[i] = pf[i - 1] | (1L << (63 - i));
-            dt[i] = (dt[i - 1] >>> 1);
+            ts[i] = (ts[i - 1] >>> 1);
         }
         prefixMasks = pf;
-        dateMasks = dt;
+        timestampMasks = ts;
     }
 
     @Test
@@ -32,8 +34,8 @@ public class GenericTest {
             System.out.printf("%016x %016x\n", prefixMasks[i], 0xFFFFFFFFFFFFFFFFL & prefixMasks[i]);
         }
         System.out.println();
-        for (int i = 0; i < dateMasks.length; ++i) {
-            System.out.printf("%016x %016x\n", dateMasks[i], 0xFFFFFFFFFFFFFFFFL & dateMasks[i]);
+        for (int i = 0; i < timestampMasks.length; ++i) {
+            System.out.printf("%016x %016x\n", timestampMasks[i], 0xFFFFFFFFFFFFFFFFL & timestampMasks[i]);
         }
         System.out.printf("** test1 end\n");
     }
@@ -41,17 +43,15 @@ public class GenericTest {
     @Test
     public void test2() {
         System.out.printf("** test2 begin\n");
-        for (int day = 1; day < 367; ++day) {
-            for (int year = 0; year < 40; ++year) {
-                //System.out.printf("** day %d, year %d\n", day, year);
-                int code = day - 1 + (366 * year);
-                for (int maskPos = 0; maskPos < dateMasks.length; ++maskPos) {
-                    long date = code;
-                    date = date << (49 - maskPos);
-                    long verify = date & dateMasks[maskPos];
-                    //System.out.printf("%016x %016x %016x (%d, %016x)\n", (long) code, date, verify, maskPos, dateMasks[maskPos]);
-                    Assert.assertEquals(date, verify);
-                }
+        long maxCode = (1L << UuidKeyGen.TIMESTAMP_BITS) - 1;
+        long[] sampleCodes = new long[] {
+            0L, 1L, maxCode, maxCode - 1, 1L << 29, (1L << 29) - 1
+        };
+        for (long code : sampleCodes) {
+            for (int maskPos = 0; maskPos < timestampMasks.length; ++maskPos) {
+                long date = code << (33 - maskPos);
+                long verify = date & timestampMasks[maskPos];
+                Assert.assertEquals(date, verify);
             }
         }
         System.out.printf("** test2 end\n");

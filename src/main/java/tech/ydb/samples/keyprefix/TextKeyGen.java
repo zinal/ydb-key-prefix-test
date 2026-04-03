@@ -1,6 +1,7 @@
 package tech.ydb.samples.keyprefix;
 
 import java.nio.ByteBuffer;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Base64;
 import java.util.UUID;
@@ -62,8 +63,8 @@ public class TextKeyGen {
      * Generates the new ID with the specified prefix value.
      *
      * @param prefix Prefix value
-     * @param date The date to be used for the generated value
-     * @return Random UUID with the embedded prefix, date code and suffix.
+     * @param date The date (UTC midnight) used for the embedded timestamp
+     * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public String nextValue(long prefix, LocalDate date) {
         UUID uuid = generator.nextValue(prefix, date);
@@ -76,21 +77,39 @@ public class TextKeyGen {
     }
 
     /**
+     * Generates the new ID with the specified prefix and instant (second
+     * precision for the embedded timestamp field).
+     *
+     * @param prefix Prefix value
+     * @param instant The instant whose second is embedded in the ID
+     * @return Encoded UUID with the embedded prefix, timestamp code and suffix.
+     */
+    public String nextValue(long prefix, Instant instant) {
+        UUID uuid = generator.nextValue(prefix, instant);
+        ByteBuffer byteArray = ByteBuffer.allocate(16);
+        byteArray.putLong(uuid.getMostSignificantBits());
+        byteArray.putLong(uuid.getLeastSignificantBits());
+        return Base64.getUrlEncoder()
+                .encodeToString(byteArray.array())
+                .substring(0, 22);
+    }
+
+    /**
      * Generates the new ID with the specified prefix value.
      *
      * @param prefix Prefix value
-     * @return Random UUID with the embedded prefix, date code and suffix.
+     * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public String nextValue(long prefix) {
-        return nextValue(prefix, LocalDate.now());
+        return nextValue(prefix, Instant.now());
     }
 
     /**
      * Generates the new ID with the random prefix value.
      *
-     * @return Random UUID with the embedded prefix, date code and suffix.
+     * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public String nextValue() {
-        return nextValue(nextPrefix(), LocalDate.now());
+        return nextValue(nextPrefix(), Instant.now());
     }
 }

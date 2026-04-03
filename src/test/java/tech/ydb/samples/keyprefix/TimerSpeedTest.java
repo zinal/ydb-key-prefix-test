@@ -1,7 +1,6 @@
 package tech.ydb.samples.keyprefix;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import org.junit.Test;
 
@@ -24,8 +23,7 @@ public class TimerSpeedTest {
     }
 
     private int timerAction() {
-        LocalDate date = LocalDate.now();
-        return date.getDayOfYear() + (366 * (date.getYear() % 40));
+        return UuidKeyGen.getTimestampCode(Instant.now());
     }
 
 }
