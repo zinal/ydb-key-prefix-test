@@ -304,10 +304,11 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
     private DataEntry newDataEntry(int ix, long prefix, LocalDate dt, Instant tv) {
         var de = new DataEntry();
-        de.mainId = newId(prefix, dt);
-        de.subId = newId(prefix, dt);
-        de.refId = newId(prefix, dt);
-        de.tv = tv.plus(ix * 10L, ChronoUnit.SECONDS);
+        Instant idInstant = tv.plus(ix * 10L, ChronoUnit.SECONDS);
+        de.mainId = newId(prefix, idInstant);
+        de.subId = newId(prefix, idInstant);
+        de.refId = newId(prefix, idInstant);
+        de.tv = idInstant;
         de.ballast1 = newBallast();
         de.ballast2 = newBallast();
         return de;
@@ -339,9 +340,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         return keyGen.nextPrefix();
     }
 
-    private String newId(long prefix, LocalDate dt) {
+    private String newId(long prefix, Instant instant) {
         if (config.isGeneratorSmartIds()) {
-            return keyGen.nextValue(prefix, dt);
+            return keyGen.nextValue(prefix, instant);
         } else {
             UUID uuid = UUID.randomUUID();
             ByteBuffer byteArray = ByteBuffer.allocate(16);
