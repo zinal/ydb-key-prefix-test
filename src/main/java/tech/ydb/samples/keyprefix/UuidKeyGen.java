@@ -70,6 +70,13 @@ public class UuidKeyGen {
     }
 
     /**
+     * @return Prefix mask to be applied
+     */
+    public long getPrefixMask() {
+        return Holder.prefixMasks[maskPos];
+    }
+
+    /**
      * Generates the new shared prefix to generate a series of related IDs.
      *
      * @return 64-bit random value to be used as a prefix.

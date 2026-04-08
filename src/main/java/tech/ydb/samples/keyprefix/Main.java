@@ -358,7 +358,13 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         if (config.isUuidV8()) {
             return keyGen.nextValue(prefix, instant);
         }
-        return UUID.randomUUID();
+        // UUIDv4 with a shared prefix applied
+        UUID v = UUID.randomUUID();
+        long mask = keyGen.getPrefixMask();
+        long msb = v.getMostSignificantBits();
+        msb &= ~mask;
+        msb |= prefix & mask;
+        return new UUID(msb, v.getLeastSignificantBits());
     }
 
     private static ArrayList<String> readBallastLines(String fname) {
