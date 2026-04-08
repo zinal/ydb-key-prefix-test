@@ -278,8 +278,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                     .toList();
             String sql = """
     DECLARE $p1 AS Uuid; DECLARE $p2 AS Text;
-    DECLARE $p3 AS Uuid; DECLARE $p4 AS Timestamp64;
-    DECLARE $p5 AS Text;
+    DECLARE $p3 AS Uuid?; DECLARE $p4 AS Timestamp?;
+    DECLARE $p5 AS Text?;
     INSERT INTO `key_prefix_demo/main`(id, id_text, collection_id, tv, ballast1)
     VALUES ($p1, $p2, $p3, $p4, $p5);
     """;
@@ -295,10 +295,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 ps.executeBatch();
             }
             sql = """
-    DECLARE $p1 AS Uuid; DECLARE $p2 AS Uuid;
-    DECLARE $p3 AS Timestamp64; DECLARE $p4 AS Text;
+    DECLARE $p1 AS Uuid; DECLARE $p2 AS Uuid?;
+    DECLARE $p3 AS Timestamp?; DECLARE $p4 AS Text?;
     INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
-    VALUES (?, ?, ?, ?);
+    VALUES ($p1, $p2, $p3, $p4);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
