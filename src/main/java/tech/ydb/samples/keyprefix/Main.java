@@ -423,9 +423,12 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             var now = Instant.now();
             if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
                 lastReported = now;
-                LOG.info("Finished {} parts of {}, running {} tasks (total {} / {} tasks)",
-                        itemsCompleted.get(), itemsExpected.get(), runningCount,
-                        completedCount, tasks.size());
+                long ic = itemsCompleted.get();
+                long ie = itemsExpected.get();
+                double pc = ((double) ic) * 100.0 / ((double) ie);
+                var pcs = String.format("%02.2f", pc);
+                LOG.info("Progress {} percent ({} / {} parts), running {} tasks (completed {} / {} tasks)",
+                        pcs, ic, ie, runningCount, completedCount, tasks.size());
             }
             try {
                 Thread.sleep(300L);
