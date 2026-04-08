@@ -269,7 +269,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             long prefix = newPrefix();
             var tv = newTv(dt);
             var entries = IntStream.range(0, 200)
-                    .mapToObj(ix -> newDataEntry(ix, prefix, dt, tv))
+                    .mapToObj(ix -> newDataEntry(ix, prefix, tv))
                     .toList();
             String sql = """
     DECLARE $p1 AS Uuid; DECLARE $p2 AS Text;
@@ -308,9 +308,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         }
     }
 
-    private DataEntry newDataEntry(int ix, long prefix, LocalDate dt, Instant tv) {
+    private DataEntry newDataEntry(int ix, long prefix, Instant tv) {
         var de = new DataEntry();
-        Instant idInstant = tv.plus(ix * 10L, ChronoUnit.SECONDS);
+        Instant idInstant = tv.plus(ix, ChronoUnit.SECONDS);
         de.mainId = newId(prefix, idInstant);
         de.subId = newId(prefix, idInstant);
         de.refId = newId(prefix, idInstant);
