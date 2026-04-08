@@ -285,7 +285,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         // 5 iterations for 200 lines each
         for (int i = 0; i < 5; ++i) {
             String sql = """
-    INSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
+    UPSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
     VALUES(?, ?, ?, ?);
     """;
             try (var ps = con.prepareStatement(sql)) {
@@ -299,7 +299,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 ps.executeBatch();
             }
             sql = """
-    INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
+    UPSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
     VALUES(?, ?, ?, ?);
     """;
             try (var ps = con.prepareStatement(sql)) {
