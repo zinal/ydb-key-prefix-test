@@ -286,16 +286,15 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         // 5 iterations for 200 lines each
         for (int i = 0; i < 5; ++i) {
             String sql = """
-    INSERT INTO `key_prefix_demo/main`(id, id_text, collection_id, tv, ballast1)
-    VALUES(?, ?, ?, ?, ?);
+    INSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
+    VALUES(?, ?, ?, ?);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
                     ps.setObject(1, entry.mainId);
-                    ps.setString(2, TextKeyGen.convert(entry.mainId));
-                    ps.setObject(3, entry.refId);
-                    ps.setTimestamp(4, Timestamp.from(entry.tv));
-                    ps.setString(5, entry.ballast1);
+                    ps.setObject(2, entry.refId);
+                    ps.setTimestamp(3, Timestamp.from(entry.tv));
+                    ps.setString(4, entry.ballast1);
                     ps.addBatch();
                 }
                 ps.executeBatch();
@@ -356,7 +355,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     }
 
     private UUID newId(long prefix, Instant instant) {
-        return keyGen.nextValue(prefix, instant);
+        if (config.isUuidV8()) {
+            return keyGen.nextValue(prefix, instant);
+        }
+        return UUID.randomUUID();
     }
 
     private static ArrayList<String> readBallastLines(String fname) {
@@ -456,6 +458,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         config.setPassword(props.getProperty("ydb.password"));
         config.setDdlFile(props.getProperty("ddl.file"));
         config.setBallastFile(props.getProperty("gen.ballast.file"));
+        v = props.getProperty("gen.uuid.v8");
+        if (v != null) {
+            config.setUuidV8(Boolean.parseBoolean(v));
+        }
         v = props.getProperty("gen.scale");
         if (v != null) {
             config.setGeneratorScale(Integer.parseInt(v));
@@ -535,6 +541,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         private LocalDate testDay;
         private int testIterations = 100;
         private int retryCount = 10;
+        private boolean uuidV8 = true;
 
         public String getUrl() {
             return url;
@@ -646,6 +653,14 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
         public void setRetryCount(int retryCount) {
             this.retryCount = retryCount;
+        }
+
+        public boolean isUuidV8() {
+            return uuidV8;
+        }
+
+        public void setUuidV8(boolean uuidV8) {
+            this.uuidV8 = uuidV8;
         }
 
     }

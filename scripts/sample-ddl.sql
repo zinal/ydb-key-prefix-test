@@ -2,14 +2,15 @@
 
 CREATE TABLE `key_prefix_demo/main` (
   id Uuid NOT NULL,
-  id_text Text NOT NULL,
   collection_id Uuid,
   tv Timestamp,
-  ballast1 Text,
+  ballast1 Text FAMILY family_large,
   PRIMARY KEY (id),
-  INDEX ix_text GLOBAL SYNC ON (id_text),
   INDEX ix_tv GLOBAL SYNC ON (tv),
-  INDEX ix_coll GLOBAL SYNC ON (collection_id)
+  INDEX ix_coll GLOBAL SYNC ON (collection_id),
+  FAMILY family_large (
+    COMPRESSION = "lz4"
+  )
 ) WITH (
   AUTO_PARTITIONING_BY_SIZE = ENABLED,
   AUTO_PARTITIONING_BY_LOAD = ENABLED,
@@ -22,10 +23,13 @@ CREATE TABLE `key_prefix_demo/sub` (
   id Uuid NOT NULL,
   ref_id Uuid,
   tv Timestamp,
-  ballast2 Text,
+  ballast2 Text FAMILY family_large,
   PRIMARY KEY (id),
   INDEX ix_tv GLOBAL SYNC ON (tv),
   INDEX ix_ref GLOBAL SYNC ON (ref_id)
+  FAMILY family_large (
+    COMPRESSION = "lz4"
+  )
 ) WITH (
   AUTO_PARTITIONING_BY_SIZE = ENABLED,
   AUTO_PARTITIONING_BY_LOAD = ENABLED,
@@ -35,14 +39,6 @@ CREATE TABLE `key_prefix_demo/sub` (
 );
 
 ALTER TABLE `key_prefix_demo/main` ALTER INDEX ix_coll SET (
-  AUTO_PARTITIONING_BY_SIZE = ENABLED,
-  AUTO_PARTITIONING_BY_LOAD = ENABLED,
-  AUTO_PARTITIONING_PARTITION_SIZE_MB = 500,
-  AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1000,
-  AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 1100
-);
-
-ALTER TABLE `key_prefix_demo/main` ALTER INDEX ix_text SET (
   AUTO_PARTITIONING_BY_SIZE = ENABLED,
   AUTO_PARTITIONING_BY_LOAD = ENABLED,
   AUTO_PARTITIONING_PARTITION_SIZE_MB = 500,

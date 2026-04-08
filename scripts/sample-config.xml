@@ -9,14 +9,16 @@
     <entry key="gen.ballast.file">professions.txt</entry>
     <entry key="retry.count">10</entry>
 
+    <!-- if false, random-only UUIDv4 is generated -->
+    <entry key="gen.uuid.v8">true</entry>
     <!-- scale is defined in 1000s records per day per table -->
     <entry key="gen.scale">1000</entry>
     <entry key="gen.start">2021-01-01</entry>
     <entry key="gen.finish">2024-12-31</entry>
     <entry key="gen.threads">100</entry>
 
-    <entry key="test.threads">10</entry>
-    <entry key="test.day">2024-12-20</entry>
+    <entry key="test.threads">100</entry>
+    <entry key="test.day">2021-10-20</entry>
     <entry key="test.iterations">500000</entry>
-    <entry key="test.rows">10000</entry>
+    <entry key="test.rows">50</entry>
 </properties>
