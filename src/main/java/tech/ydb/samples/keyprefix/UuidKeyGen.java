@@ -17,6 +17,11 @@ import java.util.UUID;
  * 34 years), which avoids code reuse for well over 20 years from the epoch
  * start.
  *
+ * Prefix and timestamp are embedded in the JDK {@link UUID#getLeastSignificantBits()
+ * least significant 64 bits}, below the RFC variant bits. That matches YDB's UUID
+ * ordering as implemented in the Java SDK (unsigned compare of wire-format low 128
+ * bits, then high 128 bits, each after byte-swap within the 64-bit halves).
+ *
  * In addition, the generator supports the "fixed prefix" schema, in which a
  * common prefix value is used for a series of related ids generated (typically
  * to be written in a single transaction).
@@ -133,11 +138,14 @@ public class UuidKeyGen {
             lsb = (lsb << 8) | (data[i] & 0xff);
         }
 
-        long bits = msb & ~(prefixMask | tsMask);
+        final long lsbPrefixMask = Holder.lsbPrefixMasks[maskPos];
+        final long lsbTsMask = Holder.lsbTimestampMasks[maskPos];
+        lsb &= ~(lsbPrefixMask | lsbTsMask);
         long tsCode = getTimestampCode(instant);
-        tsCode = tsCode << (Holder.TIMESTAMP_FIELD_LOW_BIT - maskPos);
-        bits |= (prefix & prefixMask) | (tsCode & tsMask);
-        return new UUID(bits, lsb);
+        tsCode = tsCode << (Holder.LSB_TIMESTAMP_FIELD_LOW_BIT - maskPos);
+        lsb |= (prefix & lsbPrefixMask) | (tsCode & lsbTsMask);
+        lsb = (lsb & 0x3fffffffffffffffL) | 0x8000000000000000L;
+        return new UUID(msb, lsb);
     }
 
     /**
@@ -203,14 +211,26 @@ public class UuidKeyGen {
         static final SecureRandom numberGenerator = new SecureRandom();
 
         /**
-         * Low bit index (inclusive) of the 30-bit timestamp field when
-         * {@code maskPos == 0} (1-bit prefix). Shifts down with larger
-         * prefixes.
+         * Low bit index (inclusive) of the 30-bit timestamp field in the JDK
+         * {@link UUID#getMostSignificantBits() MSB} when {@code maskPos == 0}.
+         * Used only for {@link #getPrefixMask()} (UUIDv4 path in {@code Main}).
          */
         static final int TIMESTAMP_FIELD_LOW_BIT = 33;
 
+        /**
+         * Low bit index (inclusive) of the 30-bit timestamp field in the JDK LSB
+         * when {@code maskPos == 0} (1-bit prefix at bit 61, RFC variant in bits
+         * 62–63).
+         */
+        static final int LSB_TIMESTAMP_FIELD_LOW_BIT = 31;
+
+        /** MSB-oriented masks returned by {@link UuidKeyGen#getPrefixMask()}. */
         static final long prefixMasks[];
         static final long timestampMasks[];
+
+        /** Layout for {@link #nextValue(long, Instant)} (YDB sort primary key half). */
+        static final long lsbPrefixMasks[];
+        static final long lsbTimestampMasks[];
 
         static {
             long pf[] = new long[32];
@@ -223,6 +243,17 @@ public class UuidKeyGen {
             }
             prefixMasks = pf;
             timestampMasks = ts;
+
+            long lpf[] = new long[32];
+            long lts[] = new long[32];
+            lpf[0] = 1L << 61;
+            lts[0] = (((1L << TIMESTAMP_BITS) - 1) << LSB_TIMESTAMP_FIELD_LOW_BIT);
+            for (int i = 1; i < 32; ++i) {
+                lpf[i] = lpf[i - 1] | (1L << (61 - i));
+                lts[i] = (lts[i - 1] >>> 1);
+            }
+            lsbPrefixMasks = lpf;
+            lsbTimestampMasks = lts;
         }
     }
 

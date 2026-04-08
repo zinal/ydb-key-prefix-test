@@ -6,13 +6,15 @@ This project demonstrates a **structured random UUID** (`UuidKeyGen`) instead of
 
 ### How it works
 
-The generator fills the most significant bits 64-bit part (MSB) of the UUID in the following way:
+YDB orders UUID values like the Java SDK: it compares the **wire low 128 bits** first, then the **wire high 128 bits**, using **unsigned** comparison with each 64-bit half **byte-swapped** (see `PrimitiveValue.compareUUID` in **ydb-java-sdk**). For a JDK `java.util.UUID`, the **primary** sort key is therefore **`getLeastSignificantBits()`** as an unsigned integer; the MSB half is secondary.
 
-1. **Prefix** (1–18 bits, default 10 bits) — A small set of high bits. Normally each ID draws a **new random prefix**, so the workload is **spread across on the order of 2^prefixBits partition ranges** (for example about a thousand buckets with the default 10 bits). That **horizontal spread is important for scalability**: data and load are not funneled through a single partition. At the same time, the prefix is **short relative to the full 128-bit key**, so within each prefix bucket **rows whose embedded timestamps are close** still sit in **tight subranges** — providing good **data locality and cache-friendly** access when you touch recent or time-ordered data inside a shard.
-2. **Timestamp code**  (30 bits) — Second-granularity time is encoded in a fixed bit range (the exact position shifts when you change the prefix width). The code uses **Unix epoch seconds reduced modulo 2³⁰** (a window of about 34 years before the pattern repeats).
-3. **Remaining MSB bits** — Still random, so IDs stay unique.
+The generator embeds structure in the **least significant 64 bits** (below the RFC variant bits) as follows:
 
-The **least significant 64 bits** stay fully random. Within a **fixed** prefix, UUID order follows **time then uniqueness**, so similar times group together; **varying** the prefix between IDs restores wide partition spread for the default API.
+1. **Prefix** (1–18 bits, default 10 bits) — High bits of the LSB. Normally each ID draws a **new random prefix**, so the workload is **spread across on the order of 2^prefixBits partition ranges** (for example about a thousand buckets with the default 10 bits). That **horizontal spread is important for scalability**: data and load are not funneled through a single partition. At the same time, the prefix is **short relative to the full 128-bit key**, so within each prefix bucket **rows whose embedded timestamps are close** still sit in **tight subranges** — providing good **data locality and cache-friendly** access when you touch recent or time-ordered data inside a shard.
+2. **Timestamp code** (30 bits) — Second-granularity time is encoded in a fixed bit range next to the prefix (the exact position shifts when you change the prefix width). The code uses **Unix epoch seconds reduced modulo 2³⁰** (a window of about 34 years before the pattern repeats).
+3. **Remaining LSB bits** — Still random, so IDs stay unique.
+
+The **most significant 64 bits** are random (with RFC version bits). Within a **fixed** prefix, YDB key order follows **time then uniqueness** on the LSB; **varying** the prefix between IDs restores wide partition spread for the default API.
 
 For **single-transaction, multi-row writes**, there is a custom API which allows to generate a fixed prefix value and then use it for each row. That **pins one prefix** for the whole batch, so those keys **typically map to a single partition**, which **reduces cross-partition work and transaction complexity** for that operation compared to giving every row an independent random prefix.
 
@@ -28,7 +30,7 @@ A **YDB-friendly** layout does the opposite of “pure chaos” in a controlled 
 
 ### Application usage
 
-**Typical usage** is the zero-argument path: call **`nextValue()`** with no parameters. The implementation picks a **random prefix** and embeds the **current time** (second precision) in the MSB (most significant bits part) alongside more randomness. It provides the same “drop-in” ergonomics as a normal UUID factory, while still gaining time-aware key locality compared to fully unstructured random IDs.
+**Typical usage** is the zero-argument path: call **`nextValue()`** with no parameters. The implementation picks a **random prefix** and embeds the **current time** (second precision) in the LSB alongside more randomness. It provides the same “drop-in” ergonomics as a normal UUID factory, while still gaining time-aware key locality compared to fully unstructured random IDs.
 
 For a **custom transactional pattern**, the API supports generating a sequence of values **sharing one prefix**: call **`nextPrefix()`** once, then **`nextValue(prefix, …)`** for every row in the same batch or transaction. Those keys **typically fall into a single partition**, which **lowers the cost and complexity of that one transaction** (fewer shards involved) compared to calling **`nextValue()`** per row, where each new random prefix preserves **broad partition spread** for scalability.
 
