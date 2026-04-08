@@ -26,7 +26,7 @@ CREATE TABLE `key_prefix_demo/sub` (
   ballast2 Text FAMILY family_large,
   PRIMARY KEY (id),
   INDEX ix_tv GLOBAL SYNC ON (tv),
-  INDEX ix_ref GLOBAL SYNC ON (ref_id)
+  INDEX ix_ref GLOBAL SYNC ON (ref_id),
   FAMILY family_large (
     COMPRESSION = "lz4"
   )
