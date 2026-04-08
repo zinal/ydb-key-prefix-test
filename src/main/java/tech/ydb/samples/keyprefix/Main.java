@@ -275,8 +275,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                     .mapToObj(ix -> newDataEntry(ix, prefix, tv))
                     .toList();
             String sql = """
-    DECLARE $values as List<Struct<id:Uuid, id_text:Text, collection_id: Uuid?, tv:Timestamp?, ballast1:Text?>>;
-    INSERT INTO `key_prefix_demo/main` SELECT * FROM AS_TABLE($values);
+    INSERT INTO `key_prefix_demo/main`(id, id_text, collection_id, tv, ballast1)
+    VALUES(?, ?, ?, ?, ?);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
@@ -290,8 +290,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 ps.executeBatch();
             }
             sql = """
-    DECLARE $values as List<Struct<id:Uuid, ref_id:Uuid?, tv:Timestamp?, ballast2:Text?>>;
-    INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2) SELECT * FROM AS_TABLE($values);
+    INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
+    VALUES(?, ?, ?, ?);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
