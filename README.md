@@ -6,10 +6,10 @@ This project demonstrates a **structured random UUID** (`UuidKeyGen`) instead of
 
 ### How it works
 
-The generator fills 16 random bytes, then **rewrites part of the MSB** so that three logical fields share the top of the 64-bit word:
+The generator fills the most significant bits 64-bit part (MSB) of the UUID in the following way:
 
-1. **Prefix (1–18 bits, default 10)** — A small set of high bits. Normally each ID draws a **new random prefix**, so the workload is **spread across on the order of 2^prefixBits partition ranges** (for example about a thousand buckets with the default 10 bits). That **horizontal spread is important for scalability**: data and load are not funneled through a single partition. At the same time, the prefix is **short relative to the full 128-bit key**, so within each prefix bucket **rows whose embedded timestamps are close** still sit in **tight subranges** — providing good **data locality and cache-friendly** access when you touch recent or time-ordered data inside a shard.
-2. **Timestamp code (30 bits)** — Second-granularity time is encoded in a fixed bit range (the exact position shifts when you change the prefix width). The code uses **Unix epoch seconds reduced modulo 2³⁰** (a window of about 34 years before the pattern repeats).
+1. **Prefix** (1–18 bits, default 10 bits) — A small set of high bits. Normally each ID draws a **new random prefix**, so the workload is **spread across on the order of 2^prefixBits partition ranges** (for example about a thousand buckets with the default 10 bits). That **horizontal spread is important for scalability**: data and load are not funneled through a single partition. At the same time, the prefix is **short relative to the full 128-bit key**, so within each prefix bucket **rows whose embedded timestamps are close** still sit in **tight subranges** — providing good **data locality and cache-friendly** access when you touch recent or time-ordered data inside a shard.
+2. **Timestamp code**  (30 bits) — Second-granularity time is encoded in a fixed bit range (the exact position shifts when you change the prefix width). The code uses **Unix epoch seconds reduced modulo 2³⁰** (a window of about 34 years before the pattern repeats).
 3. **Remaining MSB bits** — Still random, so IDs stay unique.
 
 The **least significant 64 bits** stay fully random. Within a **fixed** prefix, UUID order follows **time then uniqueness**, so similar times group together; **varying** the prefix between IDs restores wide partition spread for the default API.
