@@ -44,7 +44,8 @@ public class Main implements AutoCloseable {
     private final UuidKeyGen keyGen;
     private final ArrayList<String> ballastLines;
     private final ZoneId timeZone;
-    private final AtomicLong completed = new AtomicLong();
+    private final AtomicLong itemsCompleted = new AtomicLong();
+    private final AtomicLong itemsExpected = new AtomicLong();
 
     public Main(Config sc) {
         this.config = sc;
@@ -75,7 +76,7 @@ public class Main implements AutoCloseable {
         try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
             LOG.info("Submitting fill tasks...");
             var tasks = new ArrayList<Future<?>>();
-            completed.set(0L);
+            itemsCompleted.set(0L);
             // one task per date
             LocalDate current = config.getGeneratorStart();
             while (!current.isAfter(config.getGeneratorFinish())) {
@@ -84,6 +85,8 @@ public class Main implements AutoCloseable {
                 tasks.add(task);
                 current = current.plusDays(1);
             }
+            itemsExpected.set(1L * tasks.size()
+                    * 1L * config.getGeneratorScale());
             LOG.info("Fill started...");
             waitForCompletion(tasks);
             LOG.info("Fill successful!");
@@ -94,7 +97,9 @@ public class Main implements AutoCloseable {
         try (var service = Executors.newFixedThreadPool(config.getTestThreads())) {
             LOG.info("Submitting test tasks...");
             var tasks = new ArrayList<Future<?>>();
-            completed.set(0L);
+            itemsCompleted.set(0L);
+            itemsExpected.set(1L * config.getTestThreads()
+                    * 1L * config.getTestIterations());
             var startedAt = Instant.now();
             LocalDate testDay = config.getTestDay();
             for (int i = 0; i < config.getTestThreads(); ++i) {
@@ -105,7 +110,7 @@ public class Main implements AutoCloseable {
             waitForCompletion(tasks);
             long elapsedSeconds = startedAt.until(Instant.now(), ChronoUnit.SECONDS);
             LOG.info("Test successful, total {} iterations in {} seconds!",
-                    completed.get(), elapsedSeconds);
+                    itemsCompleted.get(), elapsedSeconds);
         }
     }
 
@@ -197,7 +202,7 @@ public class Main implements AutoCloseable {
     private void testTask(LocalDate testDay) {
         for (int iter = 0; iter < config.getTestIterations(); ++iter) {
             runWithRetry(true, (con) -> testTaskIter(con, testDay));
-            completed.incrementAndGet();
+            itemsCompleted.incrementAndGet();
         }
     }
 
@@ -257,7 +262,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         try {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
                 runWithRetry(false, (con) -> fillDateStep(con, dt));
-                completed.incrementAndGet();
+                itemsCompleted.incrementAndGet();
             }
         } catch (Exception ex) {
             LOG.error("Failed to fill for {}", dt, ex);
@@ -418,8 +423,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             var now = Instant.now();
             if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
                 lastReported = now;
-                LOG.info("Completed {} of {} / {}, {} parts",
-                        completedCount, tasks.size(), runningCount, completed.get());
+                LOG.info("Finished {} parts of {}, running {} tasks (total {} / {} tasks)",
+                        itemsCompleted.get(), itemsExpected.get(), runningCount,
+                        completedCount, tasks.size());
             }
             try {
                 Thread.sleep(300L);
@@ -515,7 +521,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         private LocalDate generatorFinish;
         private int generatorThreads = 4;
         private int testThreads = 4;
-        private int testRows = 10000;
+        private int testRows = 10;
         private LocalDate testDay;
         private int testIterations = 100;
         private int retryCount = 10;
