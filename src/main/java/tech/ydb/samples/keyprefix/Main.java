@@ -256,9 +256,14 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
-        for (int i = 0; i < config.getGeneratorScale(); ++i) {
-            runWithRetry(false, (con) -> fillDateStep(con, dt));
-            completed.incrementAndGet();
+        try {
+            for (int i = 0; i < config.getGeneratorScale(); ++i) {
+                runWithRetry(false, (con) -> fillDateStep(con, dt));
+                completed.incrementAndGet();
+            }
+        } catch (Exception ex) {
+            LOG.error("Failed to fill for {}", dt, ex);
+            return;
         }
         LOG.info("Completed filling data for {}.", dt);
     }
