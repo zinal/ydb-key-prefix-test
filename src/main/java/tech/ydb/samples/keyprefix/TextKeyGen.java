@@ -18,13 +18,13 @@ public class TextKeyGen {
     private final UuidKeyGen generator;
 
     /**
-     * Constructs the generator instance with the default prefix size of 12
+     * Constructs the generator instance with the default prefix size of 10
      * bits.
      *
-     * Works best for up to 4k table partitions.
+     * Works best for up to 1k table partitions.
      */
     public TextKeyGen() {
-        this(12);
+        this(10);
     }
 
     /**
@@ -68,12 +68,7 @@ public class TextKeyGen {
      */
     public String nextValue(long prefix, LocalDate date) {
         UUID uuid = generator.nextValue(prefix, date);
-        ByteBuffer byteArray = ByteBuffer.allocate(16);
-        byteArray.putLong(uuid.getMostSignificantBits());
-        byteArray.putLong(uuid.getLeastSignificantBits());
-        return Base64.getUrlEncoder()
-                .encodeToString(byteArray.array())
-                .substring(0, 22);
+        return convert(uuid);
     }
 
     /**
@@ -86,6 +81,16 @@ public class TextKeyGen {
      */
     public String nextValue(long prefix, Instant instant) {
         UUID uuid = generator.nextValue(prefix, instant);
+        return convert(uuid);
+    }
+
+    /**
+     * Convert a UUID value to a base64 text representation.
+     *
+     * @param uuid Value to be converted
+     * @return Text representation of a UUID value of a fixed length 22 symbols
+     */
+    public static String convert(UUID uuid) {
         ByteBuffer byteArray = ByteBuffer.allocate(16);
         byteArray.putLong(uuid.getMostSignificantBits());
         byteArray.putLong(uuid.getLeastSignificantBits());

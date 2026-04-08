@@ -1,5 +1,6 @@
 package tech.ydb.samples.keyprefix;
 
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -9,12 +10,12 @@ import java.util.UUID;
 /**
  * Random UUID generator optimized for range partitioning.
  *
- * Each generated value consists of a random prefix of the specified length,
- * a second-precision timestamp code of 30 bits, followed by the random suffix.
+ * Each generated value consists of a random prefix of the specified length, a
+ * second-precision timestamp code of 30 bits, followed by the random suffix.
  *
- * The timestamp is epoch seconds since 2020-01-01T00:00:00Z, modulo 2^30
- * (about 34 years), which avoids code reuse for well over 20 years from the
- * epoch start.
+ * The timestamp is epoch seconds since 2020-01-01T00:00:00Z, modulo 2^30 (about
+ * 34 years), which avoids code reuse for well over 20 years from the epoch
+ * start.
  *
  * In addition, the generator supports the "fixed prefix" schema, in which a
  * common prefix value is used for a series of related ids generated (typically
@@ -24,31 +25,38 @@ import java.util.UUID;
  */
 public class UuidKeyGen {
 
-    /** Seconds from Unix epoch to 2020-01-01T00:00:00Z (UTC). */
-    static final long TIMESTAMP_EPOCH_SECOND = 1577836800L;
+    /**
+     * Bit width of the embedded second-precision timestamp field.
+     */
+    public static final int TIMESTAMP_BITS = 30;
 
-    /** Bit width of the embedded second-precision timestamp field. */
-    static final int TIMESTAMP_BITS = 30;
+    /**
+     * Number of seconds which fit within the bit width specified.
+     */
+    public static final long TIMESTAMP_SECONDS = (1L << TIMESTAMP_BITS);
 
+    /**
+     * A position within an array of pre-computed bitmasks to be used.
+     */
     private final int maskPos;
 
     /**
-     * Constructs the generator instance with the default prefix size of 12
+     * Constructs the generator instance with the default prefix size of 10
      * bits.
      *
-     * Works best for up to 4k table partitions.
+     * Works best for up to 1k table partitions.
      */
     public UuidKeyGen() {
-        this(12);
+        this(10);
     }
 
     /**
      * Constructs the generator instance with the custom prefix size.
      *
-     * @param prefixBits Number of bits for the prefix, 1 to 31 bits.
+     * @param prefixBits Number of bits for the prefix, 1 to 18 bits.
      */
     public UuidKeyGen(int prefixBits) {
-        if (prefixBits < 1 || prefixBits > 31) {
+        if (prefixBits < 1 || prefixBits > 18) {
             throw new IllegalArgumentException("Unsupported prefix length: " + prefixBits);
         }
         this.maskPos = prefixBits - 1;
@@ -67,8 +75,14 @@ public class UuidKeyGen {
      * @return 64-bit random value to be used as a prefix.
      */
     public long nextPrefix() {
-        UUID v = UUID.randomUUID();
-        return v.getMostSignificantBits();
+        final SecureRandom ng = Holder.numberGenerator;
+        byte[] data = new byte[8];
+        ng.nextBytes(data);
+        long lsb = 0;
+        for (int i = 0; i < 8; i++) {
+            lsb = (lsb << 8) | (data[i] & 0xff);
+        }
+        return lsb;
     }
 
     /**
@@ -92,14 +106,31 @@ public class UuidKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(long prefix, Instant instant) {
-        UUID v = UUID.randomUUID();
-        long prefixMask = Holder.prefixMasks[maskPos];
-        long tsMask = Holder.timestampMasks[maskPos];
-        long bits = v.getMostSignificantBits() & ~(prefixMask | tsMask);
+        final SecureRandom ng = Holder.numberGenerator;
+        final long prefixMask = Holder.prefixMasks[maskPos];
+        final long tsMask = Holder.timestampMasks[maskPos];
+
+        byte[] data = new byte[16];
+        ng.nextBytes(data);
+        data[6] &= 0x0f;
+        data[6] |= 0x80;
+        data[8] &= 0x3f;
+        data[8] |= (byte) 0x80;
+
+        long msb = 0;
+        long lsb = 0;
+        for (int i = 0; i < 8; i++) {
+            msb = (msb << 8) | (data[i] & 0xff);
+        }
+        for (int i = 8; i < 16; i++) {
+            lsb = (lsb << 8) | (data[i] & 0xff);
+        }
+
+        long bits = msb & ~(prefixMask | tsMask);
         long tsCode = getTimestampCode(instant);
         tsCode = tsCode << (Holder.TIMESTAMP_FIELD_LOW_BIT - maskPos);
         bits |= (prefix & prefixMask) | (tsCode & tsMask);
-        return new UUID(bits, v.getLeastSignificantBits());
+        return new UUID(bits, lsb);
     }
 
     /**
@@ -125,13 +156,13 @@ public class UuidKeyGen {
      * Computes the second-precision timestamp code: seconds since
      * 2020-01-01T00:00:00Z, in the range {@code [0, 2^30)}.
      *
-     * @param instant the instant (truncated to seconds)
+     * @param instant the instant to be used
      * @return timestamp code between 0 and 2^30 - 1, inclusive
      */
     public static int getTimestampCode(Instant instant) {
         Instant sec = instant.truncatedTo(ChronoUnit.SECONDS);
-        long diff = sec.getEpochSecond() - TIMESTAMP_EPOCH_SECOND;
-        if (diff < 0 || diff >= (1L << TIMESTAMP_BITS)) {
+        long diff = sec.getEpochSecond() % TIMESTAMP_SECONDS;
+        if (diff < 0) {
             throw new IllegalArgumentException(
                     "Instant out of 30-bit timestamp range: " + instant);
         }
@@ -143,9 +174,12 @@ public class UuidKeyGen {
      */
     private static class Holder {
 
+        static final SecureRandom numberGenerator = new SecureRandom();
+
         /**
          * Low bit index (inclusive) of the 30-bit timestamp field when
-         * {@code maskPos == 0} (1-bit prefix). Shifts down with larger prefixes.
+         * {@code maskPos == 0} (1-bit prefix). Shifts down with larger
+         * prefixes.
          */
         static final int TIMESTAMP_FIELD_LOW_BIT = 33;
 
