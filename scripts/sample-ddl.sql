@@ -1,11 +1,13 @@
 -- Typical table definitions for the YDB Key Prefix Demo tool
 
 CREATE TABLE `key_prefix_demo/main` (
-  id Text NOT NULL,
-  collection_id Text,
+  id Uuid NOT NULL,
+  id_text Text NOT NULL,
+  collection_id Uuid,
   tv Timestamp,
   ballast1 Text,
   PRIMARY KEY (id),
+  INDEX ix_text GLOBAL SYNC ON (id_text),
   INDEX ix_tv GLOBAL SYNC ON (tv),
   INDEX ix_coll GLOBAL SYNC ON (collection_id)
 ) WITH (
@@ -13,19 +15,12 @@ CREATE TABLE `key_prefix_demo/main` (
   AUTO_PARTITIONING_BY_LOAD = ENABLED,
   AUTO_PARTITIONING_PARTITION_SIZE_MB = 1000,
   AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 5000,
-  AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 5500,
-  PARTITION_AT_KEYS = (
-    '0','1','2','3','4','5','6','7','8','9',
-    'A','B','C','D','E','F','G','H','I','J','K','L','M',
-    'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-    'a','b','c','d','e','f','g','h','i','j','k','l','m',
-    'n','o','p','q','r','s','t','u','v','w','x','y','z'
-  )
+  AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 5500
 );
 
 CREATE TABLE `key_prefix_demo/sub` (
-  id Text NOT NULL,
-  ref_id Text,
+  id Uuid NOT NULL,
+  ref_id Uuid,
   tv Timestamp,
   ballast2 Text,
   PRIMARY KEY (id),
@@ -36,17 +31,18 @@ CREATE TABLE `key_prefix_demo/sub` (
   AUTO_PARTITIONING_BY_LOAD = ENABLED,
   AUTO_PARTITIONING_PARTITION_SIZE_MB = 1000,
   AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 5000,
-  AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 5500,
-  PARTITION_AT_KEYS = (
-    '0','1','2','3','4','5','6','7','8','9',
-    'A','B','C','D','E','F','G','H','I','J','K','L','M',
-    'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-    'a','b','c','d','e','f','g','h','i','j','k','l','m',
-    'n','o','p','q','r','s','t','u','v','w','x','y','z'
-  )
+  AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 5500
 );
 
 ALTER TABLE `key_prefix_demo/main` ALTER INDEX ix_coll SET (
+  AUTO_PARTITIONING_BY_SIZE = ENABLED,
+  AUTO_PARTITIONING_BY_LOAD = ENABLED,
+  AUTO_PARTITIONING_PARTITION_SIZE_MB = 500,
+  AUTO_PARTITIONING_MIN_PARTITIONS_COUNT = 1000,
+  AUTO_PARTITIONING_MAX_PARTITIONS_COUNT = 1100
+);
+
+ALTER TABLE `key_prefix_demo/main` ALTER INDEX ix_text SET (
   AUTO_PARTITIONING_BY_SIZE = ENABLED,
   AUTO_PARTITIONING_BY_LOAD = ENABLED,
   AUTO_PARTITIONING_PARTITION_SIZE_MB = 500,

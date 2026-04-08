@@ -43,7 +43,7 @@ public class Main implements AutoCloseable {
 
     private final Config config;
     private final HikariDataSource ds;
-    private final TextKeyGen keyGen;
+    private final UuidKeyGen keyGen;
     private final ArrayList<String> ballastLines;
     private final ZoneId timeZone;
     private final AtomicLong completed = new AtomicLong();
@@ -51,7 +51,7 @@ public class Main implements AutoCloseable {
     public Main(Config sc) {
         this.config = sc;
         this.ds = createDataSource(sc);
-        this.keyGen = new TextKeyGen();
+        this.keyGen = new UuidKeyGen();
         this.ballastLines = readBallastLines(sc.getBallastFile());
         this.timeZone = ZoneId.of("Europe/Moscow");
     }
@@ -272,27 +272,33 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                     .mapToObj(ix -> newDataEntry(ix, prefix, dt, tv))
                     .toList();
             String sql = """
-    INSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
-    VALUES (?, ?, ?, ?);
+    DECLARE $p1 AS Uuid; DECLARE $p2 AS Text;
+    DECLARE $p3 AS Uuid; DECLARE $p4 AS Timestamp64;
+    DECLARE $p5 AS Text;
+    INSERT INTO `key_prefix_demo/main`(id, id_text, collection_id, tv, ballast1)
+    VALUES ($p1, $p2, $p3, $p4, $p5);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
-                    ps.setString(1, entry.mainId);
-                    ps.setString(2, entry.refId);
-                    ps.setTimestamp(3, Timestamp.from(entry.tv));
-                    ps.setString(4, entry.ballast1);
+                    ps.setObject(1, entry.mainId);
+                    ps.setString(2, TextKeyGen.convert(entry.mainId));
+                    ps.setObject(3, entry.refId);
+                    ps.setTimestamp(4, Timestamp.from(entry.tv));
+                    ps.setString(5, entry.ballast1);
                     ps.addBatch();
                 }
                 ps.executeBatch();
             }
             sql = """
+    DECLARE $p1 AS Uuid; DECLARE $p2 AS Uuid;
+    DECLARE $p3 AS Timestamp64; DECLARE $p4 AS Text;
     INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
     VALUES (?, ?, ?, ?);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
-                    ps.setString(1, entry.subId);
-                    ps.setString(2, entry.refId);
+                    ps.setObject(1, entry.subId);
+                    ps.setObject(2, entry.refId);
                     ps.setTimestamp(3, Timestamp.from(entry.tv));
                     ps.setString(4, entry.ballast2);
                     ps.addBatch();
@@ -340,23 +346,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         return keyGen.nextPrefix();
     }
 
-    private String newId(long prefix, Instant instant) {
-        if (config.isGeneratorSmartIds()) {
-            return keyGen.nextValue(prefix, instant);
-        } else {
-            UUID uuid = UUID.randomUUID();
-            ByteBuffer byteArray = ByteBuffer.allocate(16);
-            byteArray.putLong(uuid.getMostSignificantBits());
-            byteArray.putLong(uuid.getLeastSignificantBits());
-            String temp1 = Base64.getUrlEncoder()
-                    .encodeToString(byteArray.array())
-                    .substring(0, 22);
-            byteArray = ByteBuffer.allocate(8);
-            byteArray.putLong(prefix);
-            String temp2 = Base64.getUrlEncoder()
-                    .encodeToString(byteArray.array());
-            return temp2.substring(0, 4) + temp1.substring(4);
-        }
+    private UUID newId(long prefix, Instant instant) {
+        return keyGen.nextValue(prefix, instant);
     }
 
     private static ArrayList<String> readBallastLines(String fname) {
@@ -451,10 +442,6 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         config.setPassword(props.getProperty("ydb.password"));
         config.setDdlFile(props.getProperty("ddl.file"));
         config.setBallastFile(props.getProperty("gen.ballast.file"));
-        v = props.getProperty("gen.ids.smart");
-        if (v != null) {
-            config.setGeneratorSmartIds(Boolean.parseBoolean(v));
-        }
         v = props.getProperty("gen.scale");
         if (v != null) {
             config.setGeneratorScale(Integer.parseInt(v));
@@ -502,9 +489,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
     public static final class DataEntry {
 
-        String mainId;
-        String subId;
-        String refId;
+        UUID mainId;
+        UUID subId;
+        UUID refId;
         Instant tv;
         String ballast1;
         String ballast2;
@@ -525,7 +512,6 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         private String password;
         private String ddlFile;
         private String ballastFile;
-        private boolean generatorSmartIds = true;
         private int generatorScale = 1;
         private LocalDate generatorStart;
         private LocalDate generatorFinish;
@@ -574,14 +560,6 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
         public void setBallastFile(String ballastFile) {
             this.ballastFile = ballastFile;
-        }
-
-        public boolean isGeneratorSmartIds() {
-            return generatorSmartIds;
-        }
-
-        public void setGeneratorSmartIds(boolean generatorSmartIds) {
-            this.generatorSmartIds = generatorSmartIds;
         }
 
         public int getGeneratorScale() {
