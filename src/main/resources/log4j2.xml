@@ -8,8 +8,8 @@
     <Loggers>
         <Logger name="tech.ydb.samples" level="info"/>
         <Logger name="com.zaxxer.hikari" level="warn"/>
-        <Logger name="tech.ydb.query.impl.SessionPool$PooledQuerySession" level="error"/>
-        <Root level="info">
+        <Logger name="tech.ydb.query.impl" level="error"/>
+        <Root level="warn">
             <AppenderRef ref="STDOUT"/>
         </Root>
     </Loggers>
