@@ -2,7 +2,6 @@ package tech.ydb.samples.keyprefix;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,7 +14,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -277,11 +275,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                     .mapToObj(ix -> newDataEntry(ix, prefix, tv))
                     .toList();
             String sql = """
-    DECLARE $p1 AS Uuid; DECLARE $p2 AS Text;
-    DECLARE $p3 AS Uuid?; DECLARE $p4 AS Timestamp?;
-    DECLARE $p5 AS Text?;
-    INSERT INTO `key_prefix_demo/main`(id, id_text, collection_id, tv, ballast1)
-    VALUES ($p1, $p2, $p3, $p4, $p5);
+    DECLARE $values as List<Struct<id:Uuid, id_text:Text, collection_id: Uuid?, tv:Timestamp?, ballast1:Text?>>;
+    INSERT INTO `key_prefix_demo/main` SELECT * FROM AS_TABLE($values);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
@@ -295,10 +290,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 ps.executeBatch();
             }
             sql = """
-    DECLARE $p1 AS Uuid; DECLARE $p2 AS Uuid?;
-    DECLARE $p3 AS Timestamp?; DECLARE $p4 AS Text?;
-    INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
-    VALUES ($p1, $p2, $p3, $p4);
+    DECLARE $values as List<Struct<id:Uuid, ref_id:Uuid?, tv:Timestamp?, ballast2:Text?>>;
+    INSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2) SELECT * FROM AS_TABLE($values);
     """;
             try (var ps = con.prepareStatement(sql)) {
                 for (var entry : entries) {
