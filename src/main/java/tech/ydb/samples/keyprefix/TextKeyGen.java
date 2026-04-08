@@ -110,6 +110,25 @@ public class TextKeyGen {
     }
 
     /**
+     * Generates the new ID with the random prefix value and a specified
+     * instant.
+     *
+     * @return Random UUID with the embedded prefix, timestamp code and suffix.
+     */
+    public String nextValue(Instant instant) {
+        return nextValue(nextPrefix(), instant);
+    }
+
+    /**
+     * Generates the new ID with the random prefix value and a specified date.
+     *
+     * @return Random UUID with the embedded prefix, timestamp code and suffix.
+     */
+    public String nextValue(LocalDate date) {
+        return nextValue(nextPrefix(), date);
+    }
+
+    /**
      * Generates the new ID with the random prefix value.
      *
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
