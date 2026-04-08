@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.util.List;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
@@ -46,6 +47,7 @@ public class Main implements AutoCloseable {
     private final ZoneId timeZone;
     private final AtomicLong itemsCompleted = new AtomicLong();
     private final AtomicLong itemsExpected = new AtomicLong();
+    private final AtomicLong rowsCompleted = new AtomicLong();
 
     public Main(Config sc) {
         this.config = sc;
@@ -77,6 +79,7 @@ public class Main implements AutoCloseable {
             LOG.info("Submitting fill tasks...");
             var tasks = new ArrayList<Future<?>>();
             itemsCompleted.set(0L);
+            rowsCompleted.set(0L);
             // one task per date
             LocalDate current = config.getGeneratorStart();
             while (!current.isAfter(config.getGeneratorFinish())) {
@@ -98,6 +101,7 @@ public class Main implements AutoCloseable {
             LOG.info("Submitting test tasks...");
             var tasks = new ArrayList<Future<?>>();
             itemsCompleted.set(0L);
+            rowsCompleted.set(0L);
             itemsExpected.set(1L * config.getTestThreads()
                     * 1L * config.getTestIterations());
             var startedAt = Instant.now();
@@ -207,6 +211,7 @@ public class Main implements AutoCloseable {
     }
 
     private void testTaskIter(Connection con, LocalDate testDay) throws Exception {
+        int rows = 0;
         long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 23L);
         var tv = testDay.atStartOfDay(timeZone).plus(seconds, ChronoUnit.SECONDS);
         Timestamp ts = Timestamp.from(tv.toInstant());
@@ -227,7 +232,6 @@ LEFT JOIN `key_prefix_demo/sub` VIEW ix_ref AS sub
             ps.setTimestamp(1, ts);
             ps.setInt(2, config.getTestRows());
             try (var rs = ps.executeQuery()) {
-                int rows = 0;
                 while (rs.next()) {
                     ++rows;
                 }
@@ -249,20 +253,27 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             ps.setTimestamp(1, ts);
             ps.setInt(2, config.getTestRows());
             try (var rs = ps.executeQuery()) {
-                int rows = 0;
                 while (rs.next()) {
                     ++rows;
                 }
             }
         }
+
+        rowsCompleted.addAndGet(rows);
     }
 
     private void fillDate(LocalDate dt) {
         LOG.info("Filling data for {}...", dt);
         try {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
-                runWithRetry(false, (con) -> fillDateStep(con, dt));
+                long prefix = newPrefix();
+                var tv = newTv(dt);
+                var entries = IntStream.range(0, 200)
+                        .mapToObj(ix -> newDataEntry(ix, prefix, tv))
+                        .toList();
+                runWithRetry(false, (con) -> fillDateStep(con, entries));
                 itemsCompleted.incrementAndGet();
+                rowsCompleted.addAndGet(2 * entries.size());
             }
         } catch (Exception ex) {
             LOG.error("Failed to fill for {}", dt, ex);
@@ -271,14 +282,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         LOG.info("Completed filling data for {}.", dt);
     }
 
-    private void fillDateStep(Connection con, LocalDate dt) throws Exception {
+    private void fillDateStep(Connection con, List<DataEntry> entries) throws Exception {
         // 5 iterations for 200 lines each
         for (int i = 0; i < 5; ++i) {
-            long prefix = newPrefix();
-            var tv = newTv(dt);
-            var entries = IntStream.range(0, 200)
-                    .mapToObj(ix -> newDataEntry(ix, prefix, tv))
-                    .toList();
             String sql = """
     INSERT INTO `key_prefix_demo/main`(id, id_text, collection_id, tv, ballast1)
     VALUES(?, ?, ?, ?, ?);
@@ -427,8 +433,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 long ie = itemsExpected.get();
                 double pc = ((double) ic) * 100.0 / ((double) ie);
                 var pcs = String.format("%02.2f", pc);
-                LOG.info("Progress {} percent ({} / {} parts), running {} tasks (completed {} / {} tasks)",
-                        pcs, ic, ie, runningCount, completedCount, tasks.size());
+                LOG.info("Progress {} percent ({} / {} parts, {}M rows), running {} tasks (completed {} / {} tasks)",
+                        pcs, ic, ie, rowsCompleted.get() / 1000000L,
+                        runningCount, completedCount, tasks.size());
             }
             try {
                 Thread.sleep(300L);
