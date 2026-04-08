@@ -119,9 +119,8 @@ public class Main implements AutoCloseable {
     }
 
     public void print() {
-        var gen = new TextKeyGen();
-        while (true) {
-            System.out.println(gen.nextValue());
+        for (int i = 0; i < 100; ++i) {
+            System.out.println(newId(keyGen.nextPrefix(), Instant.now()));
         }
     }
 
