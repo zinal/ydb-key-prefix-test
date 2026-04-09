@@ -129,7 +129,7 @@ public class Main implements AutoCloseable {
 
     public static void main(String[] args) {
         if (args.length != 2) {
-            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST | CLEAN | PRINT }");
+            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST | CLEAN | PRINT | LAYOUT | ORDER }");
             System.exit(2);
         }
         try {
@@ -502,7 +502,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     }
 
     public void actionOrder() {
-        runWithRetry(true, conn -> showOrder(conn));
+        runWithRetry(false, conn -> showOrder(conn));
     }
 
     private void showOrder(Connection conn) throws Exception {
