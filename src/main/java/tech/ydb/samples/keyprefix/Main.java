@@ -475,16 +475,20 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         for (int i = 8; i < 16; i++) {
             lsb = (lsb << 8) | (input[i] & 0xff);
         }
+        long msb2 = UuidKeyGen.reorderForYdb(msb);
         String sql = """
-                     SELECT ToBytes(?);
+                     SELECT ToBytes(?), ToBytes(?);
                      """;
         try (var ps = conn.prepareStatement(sql)) {
             ps.setObject(1, new UUID(msb, lsb));
+            ps.setObject(1, new UUID(msb2, lsb));
             try (var rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    var output = rs.getBytes(1);
-                    LOG.info("INPUT:  {}", HexFormat.of().formatHex(input));
-                    LOG.info("OUTPUT: {}", HexFormat.of().formatHex(output));
+                    var out1 = rs.getBytes(1);
+                    var out2 = rs.getBytes(2);
+                    LOG.info("INP: {}", HexFormat.of().formatHex(input));
+                    LOG.info("OU1: {}", HexFormat.of().formatHex(out1));
+                    LOG.info("OU2: {}", HexFormat.of().formatHex(out2));
                 }
             }
         }

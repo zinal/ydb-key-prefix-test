@@ -1,5 +1,6 @@
 package tech.ydb.samples.keyprefix;
 
+import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -20,6 +21,11 @@ import java.util.UUID;
  * In addition, the generator supports the "fixed prefix" schema, in which a
  * common prefix value is used for a series of related ids generated (typically
  * to be written in a single transaction).
+ *
+ * The generated value is optimized for the actual internal format of UUID
+ * storage in YDB, which uses GUID (Microsoft-style) mixed-endian byte ordering.
+ * This affects the actual ordering, so it is important to properly put the
+ * bytes in the correct order.
  *
  * @author zinal
  */
@@ -137,6 +143,7 @@ public class UuidKeyGen {
         long tsCode = getTimestampCode(instant);
         tsCode = tsCode << (Holder.TIMESTAMP_FIELD_LOW_BIT - maskPos);
         bits |= (prefix & prefixMask) | (tsCode & tsMask);
+        bits = reorderForYdb(bits);
         return new UUID(bits, lsb);
     }
 
@@ -193,6 +200,35 @@ public class UuidKeyGen {
                     "Instant out of 30-bit timestamp range: " + instant);
         }
         return (int) diff;
+    }
+
+    /**
+     * YDB uses GUID (Microsoft-style) mixed-endian format.
+     *
+     * xxxxxxxx 0 1 2 3x 4 5 6 7 <br/>
+     * xINPUT: 01020304 05060708 090a0b0c 0d0e0f10 <br/>
+     * OUTPUT: 04030201 06050807 090a0b0c 0d0e0f10
+     *
+     * This function puts the bytes of MSB in the proper order.
+     *
+     * @param v
+     * @return
+     */
+    public static long reorderForYdb(long v) {
+        var bbin = ByteBuffer.allocate(8);
+        bbin.putLong(v);
+        var arin = bbin.array();
+        var arout = new byte[8];
+        arout[3] = arin[0];
+        arout[2] = arin[1];
+        arout[1] = arin[2];
+        arout[0] = arin[3];
+        arout[5] = arin[4];
+        arout[4] = arin[5];
+        arout[7] = arin[6];
+        arout[6] = arin[7];
+        var bbout = ByteBuffer.wrap(arout);
+        return bbout.getLong();
     }
 
     /**
