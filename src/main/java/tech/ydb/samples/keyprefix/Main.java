@@ -27,6 +27,7 @@ import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.util.HexFormat;
 import java.util.List;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
@@ -62,19 +63,19 @@ public class Main implements AutoCloseable {
         ds.close();
     }
 
-    public void init() throws Exception {
+    public void actionInit() throws Exception {
         LOG.info("Init started...");
         runDdlScript();
         LOG.info("Init successfull!");
     }
 
-    public void clean() throws Exception {
+    public void actionClean() throws Exception {
         LOG.info("Cleanup started...");
         dropTables();
         LOG.info("Cleanup successfull!");
     }
 
-    public void fill() throws Exception {
+    public void actionFill() throws Exception {
         try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
             LOG.info("Submitting fill tasks...");
             var tasks = new ArrayList<Future<?>>();
@@ -96,7 +97,7 @@ public class Main implements AutoCloseable {
         }
     }
 
-    public void test() throws Exception {
+    public void actionTest() throws Exception {
         try (var service = Executors.newFixedThreadPool(config.getTestThreads())) {
             LOG.info("Submitting test tasks...");
             var tasks = new ArrayList<Future<?>>();
@@ -118,7 +119,7 @@ public class Main implements AutoCloseable {
         }
     }
 
-    public void print() {
+    public void actionPrint() {
         for (int i = 0; i < 100; ++i) {
             System.out.println(newId(keyGen.nextPrefix(), Instant.now()));
         }
@@ -137,19 +138,25 @@ public class Main implements AutoCloseable {
                 LOG.info("Initialized, executing {}.", action);
                 switch (action) {
                     case INIT -> {
-                        m.init();
+                        m.actionInit();
                     }
                     case FILL -> {
-                        m.fill();
+                        m.actionFill();
                     }
                     case TEST -> {
-                        m.test();
+                        m.actionTest();
                     }
                     case CLEAN -> {
-                        m.clean();
+                        m.actionClean();
                     }
                     case PRINT -> {
-                        m.print();
+                        m.actionPrint();
+                    }
+                    case LAYOUT -> {
+                        m.actionLayout();
+                    }
+                    case ORDER -> {
+                        m.actionOrder();
                     }
                 }
             }
@@ -451,6 +458,42 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         }
     }
 
+    public void actionLayout() {
+        runWithRetry(true, conn -> showLayout(conn));
+    }
+
+    private void showLayout(Connection conn) throws Exception {
+        byte[] input = new byte[16];
+        for (int i = 0; i < input.length; ++i) {
+            input[i] = (byte) (i + 1);
+        }
+        long msb = 0;
+        long lsb = 0;
+        for (int i = 0; i < 8; i++) {
+            msb = (msb << 8) | (input[i] & 0xff);
+        }
+        for (int i = 8; i < 16; i++) {
+            lsb = (lsb << 8) | (input[i] & 0xff);
+        }
+        String sql = """
+                     SELECT ToBytes(?);
+                     """;
+        try (var ps = conn.prepareStatement(sql)) {
+            ps.setObject(1, new UUID(msb, lsb));
+            try (var rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    var output = rs.getBytes(1);
+                    LOG.info("INPUT:  {}", HexFormat.of().formatHex(input));
+                    LOG.info("OUTPUT: {}", HexFormat.of().formatHex(output));
+                }
+            }
+        }
+    }
+
+    public void actionOrder() {
+
+    }
+
     public static Config readConfig(String fname) throws Exception {
         var props = new Properties();
         try (var fis = new FileInputStream(fname)) {
@@ -527,7 +570,9 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         FILL,
         TEST,
         CLEAN,
-        PRINT
+        PRINT,
+        LAYOUT,
+        ORDER
     }
 
     public static final class Config {
