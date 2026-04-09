@@ -1,21 +1,24 @@
 package tech.ydb.samples.keyprefix;
 
 import java.nio.ByteBuffer;
+import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.Base64;
-import java.util.UUID;
 
 /**
- * Random UUID generator optimized for range partitioning.
+ * Random text-format ID generator creates cache friendly identifiers to be used
+ * as primary keys for YDB row-organized tables.
  *
  * Similar to UuidKeyGen, but for keys in textual (base64-encoded) format.
  *
+ * An extra difference is that, unlike UuidKeyGen, TextKeyGen does not set the
+ * UUID version and variant bits, so the generated value is formally not a UUID.
+ *
  * @author zinal
  */
-public class TextKeyGen {
-
-    private final UuidKeyGen generator;
+public class TextKeyGen extends BaseKeyGen {
 
     /**
      * Constructs the generator instance with the default prefix size of 10
@@ -24,68 +27,16 @@ public class TextKeyGen {
      * Works best for up to 1k table partitions.
      */
     public TextKeyGen() {
-        this(10);
+        super(10);
     }
 
     /**
      * Constructs the generator instance with the custom prefix size.
      *
-     * @param prefixBits Number of bits for the prefix, 1 to 31 bits.
+     * @param prefixBits Number of bits for the prefix, 1 to 18 bits.
      */
     public TextKeyGen(int prefixBits) {
-        this.generator = new UuidKeyGen(prefixBits);
-    }
-
-    /**
-     * @return Prefix size used for construction, in bits.
-     */
-    public int getPrefixBits() {
-        return generator.getPrefixBits();
-    }
-
-    /**
-     * @return The supporting UUID generator instance.
-     */
-    public UuidKeyGen getGenerator() {
-        return generator;
-    }
-
-    /**
-     * Convert a UUID value to a base64 text representation.
-     *
-     * @param uuid Value to be converted
-     * @return Text representation of a UUID value of a fixed length 22 symbols
-     */
-    public static String convert(UUID uuid) {
-        // apply byte swaps to restore the "regular" ordering
-        long msb = UuidKeyGen.reorderForYdb(uuid.getMostSignificantBits());
-        ByteBuffer byteArray = ByteBuffer.allocate(16);
-        byteArray.putLong(msb);
-        byteArray.putLong(uuid.getLeastSignificantBits());
-        return Base64.getUrlEncoder()
-                .encodeToString(byteArray.array())
-                .substring(0, 22);
-    }
-
-    /**
-     * Generates the new shared prefix to generate a series of related IDs.
-     *
-     * @return 64-bit random value to be used as a prefix.
-     */
-    public long nextPrefix() {
-        return generator.nextPrefix();
-    }
-
-    /**
-     * Generates the new ID with the specified prefix value.
-     *
-     * @param prefix Prefix value
-     * @param date The date (UTC midnight) used for the embedded timestamp
-     * @return Random UUID with the embedded prefix, timestamp code and suffix.
-     */
-    public String nextValue(long prefix, LocalDate date) {
-        UUID uuid = generator.nextValue(prefix, date);
-        return convert(uuid);
+        super(prefixBits);
     }
 
     /**
@@ -94,28 +45,51 @@ public class TextKeyGen {
      *
      * @param prefix Prefix value
      * @param instant The instant whose second is embedded in the ID
-     * @return Encoded UUID with the embedded prefix, timestamp code and suffix.
+     * @return Base64 encoded ID with the embedded prefix and timestamp.
      */
     public String nextValue(long prefix, Instant instant) {
-        UUID uuid = generator.nextValue(prefix, instant);
-        return convert(uuid);
+        SecureRandom ng = Holder.numberGenerator;
+        byte[] data = new byte[16];
+        ng.nextBytes(data);
+
+        long msb = 0;
+        for (int i = 0; i < 8; i++) {
+            msb = (msb << 8) | (data[i] & 0xff);
+        }
+        msb = update(msb, prefix, instant);
+        ByteBuffer.wrap(data).putLong(msb);
+        return Base64.getUrlEncoder()
+                .encodeToString(data)
+                .substring(0, 22);
     }
 
     /**
      * Generates the new ID with the specified prefix value.
      *
      * @param prefix Prefix value
-     * @return Random UUID with the embedded prefix, timestamp code and suffix.
+     * @param date The date (UTC midnight) used for the embedded timestamp
+     * @return Base64 encoded ID with the embedded prefix and timestamp for the
+     * start of date specified.
+     */
+    public String nextValue(long prefix, LocalDate date) {
+        return nextValue(prefix, date.atStartOfDay(ZoneOffset.UTC).toInstant());
+    }
+
+    /**
+     * Generates the new ID with the specified prefix value.
+     *
+     * @param prefix Prefix value
+     * @return Base64 encoded ID with the embedded prefix and the current
+     * timestamp.
      */
     public String nextValue(long prefix) {
         return nextValue(prefix, Instant.now());
     }
 
     /**
-     * Generates the new ID with the random prefix value and a specified
-     * instant.
+     * Generates the new ID with the specified instant.
      *
-     * @return Random UUID with the embedded prefix, timestamp code and suffix.
+     * @return Base64 encoded ID with the embedded timestamp code.
      */
     public String nextValue(Instant instant) {
         return nextValue(-1L, instant);
@@ -124,7 +98,9 @@ public class TextKeyGen {
     /**
      * Generates the new ID with the random prefix value and a specified date.
      *
-     * @return Random UUID with the embedded prefix, timestamp code and suffix.
+     * @param date The date (UTC midnight) used for the embedded timestamp
+     * @return Base64 encoded ID with the embedded timestamp for the start of
+     * date specified.
      */
     public String nextValue(LocalDate date) {
         return nextValue(-1L, date);
@@ -133,7 +109,7 @@ public class TextKeyGen {
     /**
      * Generates the new ID with the random prefix value.
      *
-     * @return Random UUID with the embedded prefix, timestamp code and suffix.
+     * @return Base64 encoded ID with the embedded current timestamp.
      */
     public String nextValue() {
         return nextValue(-1L, Instant.now());

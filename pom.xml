@@ -10,8 +10,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
         <exec.mainClass>tech.ydb.samples.keyprefix.Main</exec.mainClass>
         <maven.javadoc.skip>true</maven.javadoc.skip>
         <maven.source.skip>true</maven.source.skip>
@@ -61,7 +61,7 @@
         <dependency>
             <groupId>com.zaxxer</groupId>
             <artifactId>HikariCP</artifactId>
-            <version>6.3.0</version>
+            <version>4.0.3</version>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -100,10 +100,12 @@
                         <artifactId>maven-compiler-plugin</artifactId>
                         <version>3.13.0</version>
                         <configuration>
-                            <release>21</release>
+                            <release>8</release>
+                            <!--
                             <compilerArgs>
                                 <arg>-proc:full</arg>
                             </compilerArgs>
+                            -->
                         </configuration>
                     </plugin>
                     <plugin>

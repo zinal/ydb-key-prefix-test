@@ -4,9 +4,12 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -14,12 +17,17 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
@@ -27,9 +35,6 @@ import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import java.util.HexFormat;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
@@ -78,16 +83,17 @@ public class Main implements AutoCloseable {
     }
 
     public void actionFill() throws Exception {
-        try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
+        ExecutorService es = Executors.newFixedThreadPool(config.getGeneratorThreads());
+        try {
             LOG.info("Submitting fill tasks with UUIDv8={} ...", config.isUuidV8());
-            var tasks = new ArrayList<Future<?>>();
+            List<Future<?>> tasks = new ArrayList<Future<?>>();
             itemsCompleted.set(0L);
             rowsCompleted.set(0L);
             // one task per date
             LocalDate current = config.getGeneratorStart();
             while (!current.isAfter(config.getGeneratorFinish())) {
                 LocalDate dt = current;
-                var task = service.submit(() -> fillDate(dt));
+                Future<?> task = es.submit(() -> fillDate(dt));
                 tasks.add(task);
                 current = current.plusDays(1);
             }
@@ -96,21 +102,24 @@ public class Main implements AutoCloseable {
             LOG.info("Fill started...");
             waitForCompletion(tasks);
             LOG.info("Fill successful!");
+        } finally {
+            shutdownExecutor(es);
         }
     }
 
     public void actionTest() throws Exception {
-        try (var service = Executors.newFixedThreadPool(config.getTestThreads())) {
+        ExecutorService es = Executors.newFixedThreadPool(config.getTestThreads());
+        try {
             LOG.info("Submitting test tasks...");
-            var tasks = new ArrayList<Future<?>>();
+            ArrayList<Future<?>> tasks = new ArrayList<Future<?>>();
             itemsCompleted.set(0L);
             rowsCompleted.set(0L);
             itemsExpected.set(1L * config.getTestThreads()
                     * 1L * config.getTestIterations());
-            var startedAt = Instant.now();
+            Instant startedAt = Instant.now();
             LocalDate testDay = config.getTestDay();
             for (int i = 0; i < config.getTestThreads(); ++i) {
-                var task = service.submit(() -> testTask(testDay));
+                Future<?> task = es.submit(() -> testTask(testDay));
                 tasks.add(task);
             }
             LOG.info("Test started...");
@@ -118,6 +127,17 @@ public class Main implements AutoCloseable {
             long elapsedSeconds = startedAt.until(Instant.now(), ChronoUnit.SECONDS);
             LOG.info("Test successful, total {} iterations in {} seconds!",
                     itemsCompleted.get(), elapsedSeconds);
+        } finally {
+            shutdownExecutor(es);
+        }
+    }
+
+    private void shutdownExecutor(ExecutorService es) {
+        es.shutdown();
+        try {
+            es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -133,34 +153,37 @@ public class Main implements AutoCloseable {
             System.exit(2);
         }
         try {
-            var action = Action.valueOf(args[1]);
+            Action action = Action.valueOf(args[1]);
             LOG.info("Reading configuration {}...", args[0]);
-            var config = readConfig(args[0]);
-            try (var m = new Main(config)) {
+            Config config = readConfig(args[0]);
+            Main m = new Main(config);
+            try {
                 LOG.info("Initialized, executing {}.", action);
                 switch (action) {
-                    case INIT -> {
+                    case INIT:
                         m.actionInit();
-                    }
-                    case FILL -> {
+                        break;
+                    case FILL:
                         m.actionFill();
-                    }
-                    case TEST -> {
+                        break;
+                    case TEST:
                         m.actionTest();
-                    }
-                    case CLEAN -> {
+                        break;
+                    case CLEAN:
                         m.actionClean();
-                    }
-                    case PRINT -> {
+                        break;
+                    case PRINT:
                         m.actionPrint();
-                    }
-                    case LAYOUT -> {
+                        break;
+                    case LAYOUT:
                         m.actionLayout();
-                    }
-                    case ORDER -> {
+                        break;
+                    case ORDER:
                         m.actionOrder();
-                    }
+                        break;
                 }
+            } finally {
+                m.close();
             }
             LOG.info("Completed, shutting down.");
         } catch (Exception ex) {
@@ -170,7 +193,7 @@ public class Main implements AutoCloseable {
     }
 
     public static HikariDataSource createDataSource(Config sc) {
-        var maxConnections = 2 * Math.max(sc.getGeneratorThreads(), sc.getTestThreads());
+        int maxConnections = 2 * Math.max(sc.getGeneratorThreads(), sc.getTestThreads());
         LOG.info("Configuring JDBC data source for {}, maxConnections {}",
                 sc.getUrl(), maxConnections);
         HikariConfig hc = new HikariConfig();
@@ -184,13 +207,13 @@ public class Main implements AutoCloseable {
 
     private void runDdlScript() throws Exception {
         String regex = ";\\s*(?=([^']*'[^']*')*[^']*$)";
-        var sqls = Files.readString(
-                Path.of(config.ddlFile), StandardCharsets.UTF_8)
-                .split(regex);
-        try (var conn = ds.getConnection()) {
+        String ddlText = new String(
+                Files.readAllBytes(Paths.get(config.ddlFile)), StandardCharsets.UTF_8);
+        String[] sqls = ddlText.split(regex);
+        try (Connection conn = ds.getConnection()) {
             conn.setAutoCommit(true);
-            try (var stmt = conn.createStatement()) {
-                for (var sql : sqls) {
+            try (Statement stmt = conn.createStatement()) {
+                for (String sql : sqls) {
                     stmt.execute(sql);
                 }
             } finally {
@@ -200,9 +223,9 @@ public class Main implements AutoCloseable {
     }
 
     private void dropTables() throws Exception {
-        try (var conn = ds.getConnection()) {
+        try (Connection conn = ds.getConnection()) {
             conn.setAutoCommit(true);
-            try (var stmt = conn.createStatement()) {
+            try (Statement stmt = conn.createStatement()) {
                 stmt.execute("DROP TABLE `key_prefix_demo/sub`");
                 stmt.execute("DROP TABLE `key_prefix_demo/main`");
             } finally {
@@ -226,46 +249,42 @@ public class Main implements AutoCloseable {
     private void testTaskIter(Connection con, LocalDate testDay) throws Exception {
         int rows = 0;
         long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 23L);
-        var tv = testDay.atStartOfDay(timeZone).plus(seconds, ChronoUnit.SECONDS);
+        ZonedDateTime tv = testDay.atStartOfDay(timeZone).plus(seconds, ChronoUnit.SECONDS);
         Timestamp ts = Timestamp.from(tv.toInstant());
         String sql;
 
-        sql = """
-SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2
-FROM (SELECT id
-      FROM `key_prefix_demo/main` VIEW ix_tv
-      WHERE tv >= ?
-      ORDER BY tv LIMIT ?) AS main_ids
-INNER JOIN `key_prefix_demo/main` AS main
-    ON main_ids.id = main.id
-LEFT JOIN `key_prefix_demo/sub` VIEW ix_ref AS sub
-    ON sub.ref_id = main.collection_id;
-              """;
-        try (var ps = con.prepareStatement(sql)) {
+        sql = "SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2\n"
+                + "FROM (SELECT id\n"
+                + "      FROM `key_prefix_demo/main` VIEW ix_tv\n"
+                + "      WHERE tv >= ?\n"
+                + "      ORDER BY tv LIMIT ?) AS main_ids\n"
+                + "INNER JOIN `key_prefix_demo/main` AS main\n"
+                + "    ON main_ids.id = main.id\n"
+                + "LEFT JOIN `key_prefix_demo/sub` VIEW ix_ref AS sub\n"
+                + "    ON sub.ref_id = main.collection_id;\n";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setTimestamp(1, ts);
             ps.setInt(2, config.getTestRows());
-            try (var rs = ps.executeQuery()) {
+            try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     ++rows;
                 }
             }
         }
 
-        sql = """
-SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2
-FROM (SELECT id
-      FROM `key_prefix_demo/sub` VIEW ix_tv
-      WHERE tv >= ?
-      ORDER BY tv LIMIT ?) AS sub_ids
-INNER JOIN `key_prefix_demo/sub` AS sub
-    ON sub_ids.id = sub.id
-LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
-    ON sub.ref_id = main.collection_id;
-              """;
-        try (var ps = con.prepareStatement(sql)) {
+        sql = "SELECT main.id, sub.id, main.collection_id, main.ballast1, sub.ballast2\n"
+                + "FROM (SELECT id\n"
+                + "      FROM `key_prefix_demo/sub` VIEW ix_tv\n"
+                + "      WHERE tv >= ?\n"
+                + "      ORDER BY tv LIMIT ?) AS sub_ids\n"
+                + "INNER JOIN `key_prefix_demo/sub` AS sub\n"
+                + "    ON sub_ids.id = sub.id\n"
+                + "LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main\n"
+                + "    ON sub.ref_id = main.collection_id;\n";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setTimestamp(1, ts);
             ps.setInt(2, config.getTestRows());
-            try (var rs = ps.executeQuery()) {
+            try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     ++rows;
                 }
@@ -281,10 +300,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         try {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
                 long prefix = newPrefix();
-                var tv = newTv(dt);
-                var entries = IntStream.range(0, 200)
+                Instant tv = newTv(dt);
+                List<DataEntry> entries = IntStream.range(0, 200)
                         .mapToObj(ix -> newDataEntry(ix, prefix, tv))
-                        .toList();
+                        .collect(Collectors.toList());
                 runWithRetry(false, (con) -> fillDateStep(con, entries));
                 itemsCompleted.incrementAndGet();
                 rowsCompleted.addAndGet(2 * entries.size());
@@ -301,12 +320,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     private void fillDateStep(Connection con, List<DataEntry> entries) throws Exception {
         // 5 iterations for 200 lines each
         for (int i = 0; i < 5; ++i) {
-            String sql = """
-    UPSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1)
-    VALUES(?, ?, ?, ?);
-    """;
-            try (var ps = con.prepareStatement(sql)) {
-                for (var entry : entries) {
+            String sql = "UPSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1) "
+                    + "VALUES(?, ?, ?, ?);";
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                for (DataEntry entry : entries) {
                     ps.setObject(1, entry.mainId);
                     ps.setObject(2, entry.refId);
                     ps.setTimestamp(3, Timestamp.from(entry.tv));
@@ -315,12 +332,10 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 }
                 ps.executeBatch();
             }
-            sql = """
-    UPSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2)
-    VALUES(?, ?, ?, ?);
-    """;
-            try (var ps = con.prepareStatement(sql)) {
-                for (var entry : entries) {
+            sql = "UPSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2) "
+                    + "VALUES(?, ?, ?, ?);";
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                for (DataEntry entry : entries) {
                     ps.setObject(1, entry.subId);
                     ps.setObject(2, entry.refId);
                     ps.setTimestamp(3, Timestamp.from(entry.tv));
@@ -333,7 +348,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     }
 
     private DataEntry newDataEntry(int ix, long prefix, Instant tv) {
-        var de = new DataEntry();
+        DataEntry de = new DataEntry();
         Instant idInstant = tv.plus(ix, ChronoUnit.SECONDS);
         de.mainId = newId(prefix, idInstant);
         de.subId = newId(prefix, idInstant);
@@ -389,7 +404,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         }
         ArrayList<String> lines = new ArrayList<>();
         try {
-            var temp = Files.readAllLines(Path.of(fname), StandardCharsets.UTF_8);
+            List<String> temp = Files.readAllLines(Paths.get(fname), StandardCharsets.UTF_8);
             temp.stream()
                     .filter(v -> (v != null) && v.length() > 1)
                     .distinct()
@@ -404,7 +419,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     private int runWithRetry(boolean readonly, ExConsumer<Connection> action) {
         Throwable reason = null;
         for (int retryCount = 0; retryCount < config.getRetryCount() + 1; ++retryCount) {
-            try (var conn = ds.getConnection()) {
+            try (Connection conn = ds.getConnection()) {
                 try {
                     if (readonly) {
                         conn.setReadOnly(true);
@@ -438,8 +453,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         throw new RuntimeException("Fill iteration failed: retry count exceeded", reason);
     }
 
-    private void waitForCompletion(ArrayList<Future<?>> tasks) {
-        var lastReported = Instant.now();
+    private void waitForCompletion(List<Future<?>> tasks) {
+        Instant lastReported = Instant.now();
         while (true) {
             int completedCount = (int) tasks.stream()
                     .filter(f -> f.isDone() || f.isCancelled())
@@ -447,13 +462,13 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             if (completedCount >= tasks.size()) {
                 break;
             }
-            var now = Instant.now();
+            Instant now = Instant.now();
             if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
                 lastReported = now;
                 long ic = itemsCompleted.get();
                 long ie = itemsExpected.get();
                 double pc = ((double) ic) * 100.0 / ((double) ie);
-                var pcs = String.format("%02.2f", pc);
+                String pcs = String.format("%02.2f", pc);
                 LOG.info("Progress {} percent ({} / {} parts, {}M rows), running {} tasks (completed {} / {} tasks)",
                         pcs, ic, ie, rowsCompleted.get() / 1000000L,
                         tasksRunning.get(), completedCount, tasks.size());
@@ -482,23 +497,32 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         for (int i = 8; i < 16; i++) {
             lsb = (lsb << 8) | (input[i] & 0xff);
         }
-        long msb2 = UuidKeyGen.reorderForYdb(msb);
-        String sql = """
-                     SELECT ToBytes(?), ToBytes(?);
-                     """;
-        try (var ps = conn.prepareStatement(sql)) {
+        long msb2 = UuidKeyGen.reorder(msb);
+        String sql = "                     SELECT ToBytes(?), ToBytes(?);\n";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setObject(1, new UUID(msb, lsb));
             ps.setObject(2, new UUID(msb2, lsb));
-            try (var rs = ps.executeQuery()) {
+            try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    var out1 = rs.getBytes(1);
-                    var out2 = rs.getBytes(2);
-                    LOG.info("INP: {}", HexFormat.of().formatHex(input));
-                    LOG.info("OU1: {}", HexFormat.of().formatHex(out1));
-                    LOG.info("OU2: {}", HexFormat.of().formatHex(out2));
+                    byte[] out1 = rs.getBytes(1);
+                    byte[] out2 = rs.getBytes(2);
+                    LOG.info("INP: {}", formatHex(input));
+                    LOG.info("OU1: {}", formatHex(out1));
+                    LOG.info("OU2: {}", formatHex(out2));
                 }
             }
         }
+    }
+
+    public static String formatHex(byte[] bytes) {
+        if (bytes == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append(String.format("%02x", b & 0xff));
+        }
+        return sb.toString();
     }
 
     public void actionOrder() {
@@ -507,10 +531,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
     private void showOrder(Connection conn) throws Exception {
         // CREATE TABLE uuid_order_test(a Uuid NOT NULL, b Int32 NOT NULL, PRIMARY KEY(a))
-        String sql = """
-                     UPSERT INTO uuid_order_test(a,b) VALUES(?,?);
-                     """;
-        try (var ps = conn.prepareStatement(sql)) {
+        String sql = "                     UPSERT INTO uuid_order_test(a,b) VALUES(?,?);\n";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             for (int i = 0; i < 16; ++i) {
                 ps.setObject(1, makeUuid(i));
                 ps.setInt(2, i);
@@ -541,17 +563,17 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         } else {
             throw new IllegalArgumentException();
         }
-        msb = UuidKeyGen.reorderForYdb(msb);
+        msb = UuidKeyGen.reorder(msb);
         return new UUID(msb, lsb);
     }
 
     public static Config readConfig(String fname) throws Exception {
-        var props = new Properties();
-        try (var fis = new FileInputStream(fname)) {
+        Properties props = new Properties();
+        try (FileInputStream fis = new FileInputStream(fname)) {
             props.loadFromXML(fis);
         }
         String v;
-        var config = new Config();
+        Config config = new Config();
         config.setUrl(props.getProperty("ydb.url"));
         config.setLogin(props.getProperty("ydb.user"));
         config.setPassword(props.getProperty("ydb.password"));
