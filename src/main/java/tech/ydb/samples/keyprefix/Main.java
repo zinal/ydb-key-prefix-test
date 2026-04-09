@@ -77,7 +77,7 @@ public class Main implements AutoCloseable {
 
     public void actionFill() throws Exception {
         try (var service = Executors.newFixedThreadPool(config.getGeneratorThreads())) {
-            LOG.info("Submitting fill tasks...");
+            LOG.info("Submitting fill tasks with UUIDv8={} ...", config.isUuidV8());
             var tasks = new ArrayList<Future<?>>();
             itemsCompleted.set(0L);
             rowsCompleted.set(0L);
@@ -269,7 +269,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     }
 
     private void fillDate(LocalDate dt) {
-        LOG.info("Filling data for {}...", dt);
+        LOG.debug("Filling data for {}...", dt);
         try {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
                 long prefix = newPrefix();
@@ -285,7 +285,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             LOG.error("Failed to fill for {}", dt, ex);
             return;
         }
-        LOG.info("Completed filling data for {}.", dt);
+        LOG.debug("Completed filling data for {}.", dt);
     }
 
     private void fillDateStep(Connection con, List<DataEntry> entries) throws Exception {
