@@ -29,6 +29,7 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
@@ -46,6 +47,7 @@ public class Main implements AutoCloseable {
     private final UuidKeyGen keyGen;
     private final ArrayList<String> ballastLines;
     private final ZoneId timeZone;
+    private final AtomicInteger tasksRunning = new AtomicInteger();
     private final AtomicLong itemsCompleted = new AtomicLong();
     private final AtomicLong itemsExpected = new AtomicLong();
     private final AtomicLong rowsCompleted = new AtomicLong();
@@ -210,9 +212,14 @@ public class Main implements AutoCloseable {
     }
 
     private void testTask(LocalDate testDay) {
-        for (int iter = 0; iter < config.getTestIterations(); ++iter) {
-            runWithRetry(true, (con) -> testTaskIter(con, testDay));
-            itemsCompleted.incrementAndGet();
+        tasksRunning.incrementAndGet();
+        try {
+            for (int iter = 0; iter < config.getTestIterations(); ++iter) {
+                runWithRetry(true, (con) -> testTaskIter(con, testDay));
+                itemsCompleted.incrementAndGet();
+            }
+        } finally {
+            tasksRunning.decrementAndGet();
         }
     }
 
@@ -270,6 +277,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
 
     private void fillDate(LocalDate dt) {
         LOG.debug("Filling data for {}...", dt);
+        tasksRunning.incrementAndGet();
         try {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
                 long prefix = newPrefix();
@@ -284,6 +292,8 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
         } catch (Exception ex) {
             LOG.error("Failed to fill for {}", dt, ex);
             return;
+        } finally {
+            tasksRunning.decrementAndGet();
         }
         LOG.debug("Completed filling data for {}.", dt);
     }
@@ -437,9 +447,6 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
             if (completedCount >= tasks.size()) {
                 break;
             }
-            int runningCount = (int) tasks.stream()
-                    .filter(f -> f.state() == Future.State.RUNNING)
-                    .count();
             var now = Instant.now();
             if (lastReported.until(now, ChronoUnit.SECONDS) >= 10L) {
                 lastReported = now;
@@ -449,7 +456,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                 var pcs = String.format("%02.2f", pc);
                 LOG.info("Progress {} percent ({} / {} parts, {}M rows), running {} tasks (completed {} / {} tasks)",
                         pcs, ic, ie, rowsCompleted.get() / 1000000L,
-                        runningCount, completedCount, tasks.size());
+                        tasksRunning.get(), completedCount, tasks.size());
             }
             try {
                 Thread.sleep(300L);
