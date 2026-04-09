@@ -2,18 +2,17 @@ package tech.ydb.samples.keyprefix;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.UUID;
 import org.junit.Test;
 
 /**
  *
  * @author mzinal
  */
-public class BasicGenTest {
+public class TextKeyGenTest {
 
     @Test
     public void test1() {
-        UuidKeyGen gen = new UuidKeyGen();
+        TextKeyGen gen = new TextKeyGen();
         System.out.println("Current values:");
         print(gen.nextValue());
         print(gen.nextValue());
@@ -35,8 +34,8 @@ public class BasicGenTest {
         print(gen.nextValue(LocalDate.ofYearDay(2083, 33)));
     }
 
-    private void print(UUID uuid) {
-        System.out.println(uuid.toString() + " " + TextKeyGen.convert(uuid));
+    private void print(String id) {
+        System.out.println(id);
     }
 
 }
