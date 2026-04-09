@@ -13,15 +13,23 @@ public class BasicGenTest {
 
     @Test
     public void test1() {
-        var gen = new UuidKeyGen();
+        UuidKeyGen gen = new UuidKeyGen();
         System.out.println("Current values:");
         print(gen.nextValue());
         print(gen.nextValue());
         print(gen.nextValue());
         print(gen.nextValue());
+        System.out.println("Prefix values:");
+        long pfx = gen.nextPrefix();
+        print(gen.nextValue(pfx));
+        print(gen.nextValue(pfx));
+        print(gen.nextValue(pfx));
+        print(gen.nextValue(pfx));
         System.out.println("Past values:");
         print(gen.nextValue(Instant.parse("2007-12-03T10:15:30.00Z")));
+        print(gen.nextValue(Instant.parse("2007-12-03T10:15:40.00Z")));
         print(gen.nextValue(LocalDate.ofYearDay(1999, 157)));
+        print(gen.nextValue(LocalDate.ofYearDay(1999, 158)));
         System.out.println("Future values:");
         print(gen.nextValue(Instant.parse("2057-12-03T10:15:30.00Z")));
         print(gen.nextValue(LocalDate.ofYearDay(2083, 33)));

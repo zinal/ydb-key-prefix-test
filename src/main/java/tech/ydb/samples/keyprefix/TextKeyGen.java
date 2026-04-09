@@ -7,7 +7,8 @@ import java.util.Base64;
 import java.util.UUID;
 
 /**
- * Random UUID generator optimized for range partitioning.
+ * Random text-format ID generator creates cache friendly identifiers to be used
+ * as primary keys for YDB row-organized tables.
  *
  * Similar to UuidKeyGen, but for keys in textual (base64-encoded) format.
  *
@@ -58,7 +59,7 @@ public class TextKeyGen {
      */
     public static String convert(UUID uuid) {
         // apply byte swaps to restore the "regular" ordering
-        long msb = UuidKeyGen.reorderForYdb(uuid.getMostSignificantBits());
+        long msb = UuidKeyGen.reorder(uuid.getMostSignificantBits());
         ByteBuffer byteArray = ByteBuffer.allocate(16);
         byteArray.putLong(msb);
         byteArray.putLong(uuid.getLeastSignificantBits());

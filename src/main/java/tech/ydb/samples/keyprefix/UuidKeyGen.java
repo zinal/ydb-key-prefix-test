@@ -8,7 +8,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
- * Random UUID generator optimized for range partitioning.
+ * Random UUID generator creates cache friendly identifiers to be used as
+ * primary keys for YDB row-organized tables.
  *
  * Each generated value consists of a random prefix of the specified length, a
  * second-precision timestamp code of 30 bits, followed by the random suffix.
@@ -77,7 +78,7 @@ public class UuidKeyGen {
      * @return Prefix mask to be applied
      */
     public long getPrefixMask() {
-        return Holder.prefixMasks[maskPos];
+        return SupportKeyGen.Holder.prefixMasks[maskPos];
     }
 
     /**
@@ -86,7 +87,7 @@ public class UuidKeyGen {
      * @return Random value to be used as a prefix.
      */
     public long nextPrefix() {
-        final SecureRandom ng = Holder.numberGenerator;
+        final SecureRandom ng = SupportKeyGen.Holder.numberGenerator;
         byte[] data = new byte[8];
         ng.nextBytes(data);
         long lsb = 0;
@@ -117,17 +118,10 @@ public class UuidKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(long prefix, Instant instant) {
-        final SecureRandom ng = Holder.numberGenerator;
-        final long prefixMask = Holder.prefixMasks[maskPos];
-        final long tsMask = Holder.timestampMasks[maskPos];
+        SecureRandom ng = SupportKeyGen.Holder.numberGenerator;
+        long tsMask = SupportKeyGen.Holder.timestampMasks[maskPos];
 
-        byte[] data;
-        if (prefix == -1L) {
-            // need extra 8 random bytes for prefix
-            data = new byte[24];
-        } else {
-            data = new byte[16];
-        }
+        byte[] data = new byte[16];
         ng.nextBytes(data);
 
         data[6] &= 0x0f;
@@ -143,18 +137,19 @@ public class UuidKeyGen {
         for (int i = 8; i < 16; i++) {
             lsb = (lsb << 8) | (data[i] & 0xff);
         }
-        if (prefix == -1L) {
-            prefix = 0;
-            for (int i = 16; i < 24; i++) {
-                prefix = (prefix << 8) | (data[i] & 0xff);
-            }
-        }
 
-        long bits = msb & ~(prefixMask | tsMask);
         long tsCode = getTimestampCode(instant);
-        tsCode = tsCode << (Holder.TIMESTAMP_FIELD_LOW_BIT - maskPos);
-        bits |= (prefix & prefixMask) | (tsCode & tsMask);
-        bits = reorderForYdb(bits);
+        tsCode = tsCode << (SupportKeyGen.TIMESTAMP_FIELD_LOW_BIT - maskPos);
+        long bits;
+        if (prefix == -1L) {
+            bits = msb & ~tsMask;
+            bits |= tsCode & tsMask;
+        } else {
+            long prefixMask = SupportKeyGen.Holder.prefixMasks[maskPos];
+            bits = msb & ~(prefixMask | tsMask);
+            bits |= (prefix & prefixMask) | (tsCode & tsMask);
+        }
+        bits = reorder(bits);
         return new UUID(bits, lsb);
     }
 
@@ -225,7 +220,7 @@ public class UuidKeyGen {
      * @param v
      * @return
      */
-    public static long reorderForYdb(long v) {
+    public static long reorder(long v) {
         long b0 = (v >>> 56) & 0xffL;
         long b1 = (v >>> 48) & 0xffL;
         long b2 = (v >>> 40) & 0xffL;
@@ -236,37 +231,6 @@ public class UuidKeyGen {
         long b7 = v & 0xffL;
         return (b3 << 56) | (b2 << 48) | (b1 << 40) | (b0 << 32)
                 | (b5 << 24) | (b4 << 16) | (b7 << 8) | b6;
-    }
-
-    /**
-     * A holder class to defer initialization until needed.
-     */
-    private static class Holder {
-
-        static final SecureRandom numberGenerator = new SecureRandom();
-
-        /**
-         * Low bit index (inclusive) of the 30-bit timestamp field when
-         * {@code maskPos == 0} (1-bit prefix). Shifts down with larger
-         * prefixes.
-         */
-        static final int TIMESTAMP_FIELD_LOW_BIT = 33;
-
-        static final long prefixMasks[];
-        static final long timestampMasks[];
-
-        static {
-            long pf[] = new long[32];
-            long ts[] = new long[32];
-            pf[0] = 0x8000000000000000L;
-            ts[0] = (((1L << TIMESTAMP_BITS) - 1) << TIMESTAMP_FIELD_LOW_BIT);
-            for (int i = 1; i < 32; ++i) {
-                pf[i] = pf[i - 1] | (1L << (63 - i));
-                ts[i] = (ts[i - 1] >>> 1);
-            }
-            prefixMasks = pf;
-            timestampMasks = ts;
-        }
     }
 
 }
