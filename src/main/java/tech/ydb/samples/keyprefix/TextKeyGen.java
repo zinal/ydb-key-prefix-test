@@ -6,16 +6,15 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.Base64;
-import java.util.UUID;
-import static tech.ydb.samples.keyprefix.BaseKeyGen.TIMESTAMP_FIELD_LOW_BIT;
-import static tech.ydb.samples.keyprefix.BaseKeyGen.getTimestampCode;
-import static tech.ydb.samples.keyprefix.BaseKeyGen.reorder;
 
 /**
  * Random text-format ID generator creates cache friendly identifiers to be used
  * as primary keys for YDB row-organized tables.
  *
  * Similar to UuidKeyGen, but for keys in textual (base64-encoded) format.
+ *
+ * An extra difference is that, unlike UuidKeyGen, TextKeyGen does not set the
+ * UUID version and variant bits, so the generated value is formally not a UUID.
  *
  * @author zinal
  */

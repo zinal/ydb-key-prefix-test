@@ -88,7 +88,8 @@ public class UuidKeyGen extends BaseKeyGen {
             lsb = (lsb << 8) | (data[i] & 0xff);
         }
 
-        return new UUID(update(msb, prefix, instant), lsb);
+        msb = update(msb, prefix, instant);
+        return new UUID(reorder(msb), lsb);
     }
 
     /**

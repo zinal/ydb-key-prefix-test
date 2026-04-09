@@ -85,7 +85,7 @@ public class BaseKeyGen {
             bits = msb & ~(prefixMask | tsMask);
             bits |= (prefix & prefixMask) | (tsCode & tsMask);
         }
-        return reorder(bits);
+        return bits;
     }
 
     /**
