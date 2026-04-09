@@ -502,7 +502,47 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
     }
 
     public void actionOrder() {
+        runWithRetry(true, conn -> showOrder(conn));
+    }
 
+    private void showOrder(Connection conn) throws Exception {
+        // CREATE TABLE uuid_order_test(a Uuid NOT NULL, b Int32 NOT NULL, PRIMARY KEY(a))
+        String sql = """
+                     UPSERT INTO uuid_order_test(a,b) VALUES(?,?);
+                     """;
+        try (var ps = conn.prepareStatement(sql)) {
+            for (int i = 0; i < 16; ++i) {
+                ps.setObject(1, makeUuid(i));
+                ps.setInt(2, i);
+                ps.addBatch();
+            }
+            ps.executeBatch();
+        }
+    }
+
+    private static final long DIGITOR[] = new long[]{
+        0x0000000000000001L,
+        0x0000000000000200L,
+        0x0000000000030000L,
+        0x0000000004000000L,
+        0x0000000500000000L,
+        0x0000060000000000L,
+        0x0007000000000000L,
+        0x0800000000000000L
+    };
+
+    private UUID makeUuid(int digit) {
+        long msb = 0;
+        long lsb = 0;
+        if (digit >= 0 && digit < 8) {
+            lsb = DIGITOR[digit];
+        } else if (digit >= 8 && digit < 16) {
+            msb = DIGITOR[digit - 8];
+        } else {
+            throw new IllegalArgumentException();
+        }
+        msb = UuidKeyGen.reorderForYdb(msb);
+        return new UUID(msb, lsb);
     }
 
     public static Config readConfig(String fname) throws Exception {
