@@ -85,14 +85,14 @@ public class UuidKeyGen {
     /**
      * Generates the new shared prefix to generate a series of related IDs.
      *
-     * @return 64-bit random value to be used as a prefix.
+     * @return Random value to be used as a prefix.
      */
     public long nextPrefix() {
         final SecureRandom ng = Holder.numberGenerator;
-        byte[] data = new byte[8];
+        byte[] data = new byte[4]; // no need for more than 32 bits
         ng.nextBytes(data);
         long lsb = 0;
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 4; i++) {
             lsb = (lsb << 8) | (data[i] & 0xff);
         }
         return lsb;
