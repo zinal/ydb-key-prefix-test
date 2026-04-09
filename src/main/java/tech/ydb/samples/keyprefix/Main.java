@@ -481,7 +481,7 @@ LEFT JOIN `key_prefix_demo/main` VIEW ix_coll AS main
                      """;
         try (var ps = conn.prepareStatement(sql)) {
             ps.setObject(1, new UUID(msb, lsb));
-            ps.setObject(1, new UUID(msb2, lsb));
+            ps.setObject(2, new UUID(msb2, lsb));
             try (var rs = ps.executeQuery()) {
                 if (rs.next()) {
                     var out1 = rs.getBytes(1);
