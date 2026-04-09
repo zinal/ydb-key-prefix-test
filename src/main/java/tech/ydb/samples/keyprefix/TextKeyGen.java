@@ -51,6 +51,23 @@ public class TextKeyGen {
     }
 
     /**
+     * Convert a UUID value to a base64 text representation.
+     *
+     * @param uuid Value to be converted
+     * @return Text representation of a UUID value of a fixed length 22 symbols
+     */
+    public static String convert(UUID uuid) {
+        // apply byte swaps to restore the "regular" ordering
+        long msb = UuidKeyGen.reorderForYdb(uuid.getMostSignificantBits());
+        ByteBuffer byteArray = ByteBuffer.allocate(16);
+        byteArray.putLong(msb);
+        byteArray.putLong(uuid.getLeastSignificantBits());
+        return Base64.getUrlEncoder()
+                .encodeToString(byteArray.array())
+                .substring(0, 22);
+    }
+
+    /**
      * Generates the new shared prefix to generate a series of related IDs.
      *
      * @return 64-bit random value to be used as a prefix.
@@ -85,21 +102,6 @@ public class TextKeyGen {
     }
 
     /**
-     * Convert a UUID value to a base64 text representation.
-     *
-     * @param uuid Value to be converted
-     * @return Text representation of a UUID value of a fixed length 22 symbols
-     */
-    public static String convert(UUID uuid) {
-        ByteBuffer byteArray = ByteBuffer.allocate(16);
-        byteArray.putLong(uuid.getMostSignificantBits());
-        byteArray.putLong(uuid.getLeastSignificantBits());
-        return Base64.getUrlEncoder()
-                .encodeToString(byteArray.array())
-                .substring(0, 22);
-    }
-
-    /**
      * Generates the new ID with the specified prefix value.
      *
      * @param prefix Prefix value
@@ -116,7 +118,7 @@ public class TextKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public String nextValue(Instant instant) {
-        return nextValue(nextPrefix(), instant);
+        return nextValue(-1L, instant);
     }
 
     /**
@@ -125,7 +127,7 @@ public class TextKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public String nextValue(LocalDate date) {
-        return nextValue(nextPrefix(), date);
+        return nextValue(-1L, date);
     }
 
     /**
@@ -134,6 +136,6 @@ public class TextKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public String nextValue() {
-        return nextValue(nextPrefix(), Instant.now());
+        return nextValue(-1L, Instant.now());
     }
 }
