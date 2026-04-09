@@ -1,6 +1,5 @@
 package tech.ydb.samples.keyprefix;
 
-import java.nio.ByteBuffer;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -14,9 +13,8 @@ import java.util.UUID;
  * Each generated value consists of a random prefix of the specified length, a
  * second-precision timestamp code of 30 bits, followed by the random suffix.
  *
- * The timestamp is epoch seconds since 2020-01-01T00:00:00Z, modulo 2^30 (about
- * 34 years), which avoids code reuse for well over 20 years from the epoch
- * start.
+ * The timestamp is UNIX epoch seconds, modulo 2^30 (about 34 years), which
+ * avoids code reuse for well over 30 years from the overlap.
  *
  * In addition, the generator supports the "fixed prefix" schema, in which a
  * common prefix value is used for a series of related ids generated (typically
@@ -89,10 +87,10 @@ public class UuidKeyGen {
      */
     public long nextPrefix() {
         final SecureRandom ng = Holder.numberGenerator;
-        byte[] data = new byte[4]; // no need for more than 32 bits
+        byte[] data = new byte[8];
         ng.nextBytes(data);
         long lsb = 0;
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 8; i++) {
             lsb = (lsb << 8) | (data[i] & 0xff);
         }
         return lsb;
@@ -123,8 +121,15 @@ public class UuidKeyGen {
         final long prefixMask = Holder.prefixMasks[maskPos];
         final long tsMask = Holder.timestampMasks[maskPos];
 
-        byte[] data = new byte[16];
+        byte[] data;
+        if (prefix == -1L) {
+            // need extra 8 random bytes for prefix
+            data = new byte[24];
+        } else {
+            data = new byte[16];
+        }
         ng.nextBytes(data);
+
         data[6] &= 0x0f;
         data[6] |= 0x80;
         data[8] &= 0x3f;
@@ -137,6 +142,12 @@ public class UuidKeyGen {
         }
         for (int i = 8; i < 16; i++) {
             lsb = (lsb << 8) | (data[i] & 0xff);
+        }
+        if (prefix == -1L) {
+            prefix = 0;
+            for (int i = 16; i < 24; i++) {
+                prefix = (prefix << 8) | (data[i] & 0xff);
+            }
         }
 
         long bits = msb & ~(prefixMask | tsMask);
@@ -164,7 +175,7 @@ public class UuidKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(Instant instant) {
-        return nextValue(nextPrefix(), instant);
+        return nextValue(-1L, instant);
     }
 
     /**
@@ -173,7 +184,7 @@ public class UuidKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(LocalDate date) {
-        return nextValue(nextPrefix(), date);
+        return nextValue(-1L, date);
     }
 
     /**
@@ -182,7 +193,7 @@ public class UuidKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue() {
-        return nextValue(nextPrefix(), Instant.now());
+        return nextValue(-1L, Instant.now());
     }
 
     /**
@@ -215,20 +226,16 @@ public class UuidKeyGen {
      * @return
      */
     public static long reorderForYdb(long v) {
-        var bbin = ByteBuffer.allocate(8);
-        bbin.putLong(v);
-        var arin = bbin.array();
-        var arout = new byte[8];
-        arout[3] = arin[0];
-        arout[2] = arin[1];
-        arout[1] = arin[2];
-        arout[0] = arin[3];
-        arout[5] = arin[4];
-        arout[4] = arin[5];
-        arout[7] = arin[6];
-        arout[6] = arin[7];
-        var bbout = ByteBuffer.wrap(arout);
-        return bbout.getLong();
+        long b0 = (v >>> 56) & 0xffL;
+        long b1 = (v >>> 48) & 0xffL;
+        long b2 = (v >>> 40) & 0xffL;
+        long b3 = (v >>> 32) & 0xffL;
+        long b4 = (v >>> 24) & 0xffL;
+        long b5 = (v >>> 16) & 0xffL;
+        long b6 = (v >>> 8) & 0xffL;
+        long b7 = v & 0xffL;
+        return (b3 << 56) | (b2 << 48) | (b1 << 40) | (b0 << 32)
+                | (b5 << 24) | (b4 << 16) | (b7 << 8) | b6;
     }
 
     /**
