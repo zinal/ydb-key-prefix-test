@@ -292,6 +292,8 @@ public class Main implements AutoCloseable {
                 runWithRetry(true, (con) -> simpleTestIter(con, ids));
                 itemsCompleted.incrementAndGet();
             }
+        } catch (Exception ex) {
+            LOG.error("Test task failed", ex);
         } finally {
             tasksRunning.decrementAndGet();
         }
