@@ -293,7 +293,7 @@ public class Main implements AutoCloseable {
                 itemsCompleted.incrementAndGet();
             }
         } catch (Exception ex) {
-            LOG.error("Test task failed", ex);
+            LOG.error("Simple test task failed", ex);
         } finally {
             tasksRunning.decrementAndGet();
         }
@@ -340,7 +340,6 @@ public class Main implements AutoCloseable {
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setObject(1, convertList(inputs));
             try (ResultSet rs = ps.executeQuery()) {
-                ps.setObject(1, rs);
                 while (rs.next()) {
                     subids.add(UUID.fromString(rs.getString(3)));
                     textLen += rs.getString(4).length();
@@ -356,7 +355,6 @@ public class Main implements AutoCloseable {
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setObject(1, convertList(subids));
             try (ResultSet rs = ps.executeQuery()) {
-                ps.setObject(1, rs);
                 while (rs.next()) {
                     textLen += rs.getString(4).length();
                     ++rows;
@@ -375,6 +373,8 @@ public class Main implements AutoCloseable {
                 runWithRetry(true, (con) -> complexTestIter(con, testDay));
                 itemsCompleted.incrementAndGet();
             }
+        } catch (Exception ex) {
+            LOG.error("Complex test task failed", ex);
         } finally {
             tasksRunning.decrementAndGet();
         }
@@ -586,11 +586,11 @@ public class Main implements AutoCloseable {
                         Thread.currentThread().interrupt();
                     }
                 } else {
-                    throw new RuntimeException("Fill iteration failed: non-retryable exception", ex);
+                    throw new RuntimeException("Transaction failed: non-retryable exception", ex);
                 }
             }
         }
-        throw new RuntimeException("Fill iteration failed: retry count exceeded", reason);
+        throw new RuntimeException("Transaction failed: retry count exceeded", reason);
     }
 
     private void waitForCompletion(List<Future<?>> tasks) {
