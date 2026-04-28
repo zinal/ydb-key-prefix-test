@@ -113,6 +113,10 @@ public class Main implements AutoCloseable {
     }
 
     public void actionTestSimple() throws Exception {
+        if (config.getTestIterations() < 1) {
+            LOG.warn("Forced the default 100 test iterations per task");
+            config.setTestIterations(100);
+        }
         LocalDate testDay = config.getTestDay();
         LOG.info("Loading identifiers for {}...", testDay);
         List<String> ids = loadIds(testDay);
@@ -121,6 +125,10 @@ public class Main implements AutoCloseable {
     }
 
     public void actionTestComplex() throws Exception {
+        if (config.getTestIterations() < 1) {
+            LOG.warn("Forced the default 100 test iterations per task");
+            config.setTestIterations(100);
+        }
         LocalDate testDay = config.getTestDay();
         submitTests("TEST_COMPLEX", () -> complexTestTask(testDay));
     }
@@ -280,7 +288,6 @@ public class Main implements AutoCloseable {
     private void simpleTestTask(List<String> ids) {
         tasksRunning.incrementAndGet();
         try {
-            LOG.info("Iteration on id set {}", ids.size());
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
                 runWithRetry(true, (con) -> simpleTestIter(con, ids));
                 itemsCompleted.incrementAndGet();
