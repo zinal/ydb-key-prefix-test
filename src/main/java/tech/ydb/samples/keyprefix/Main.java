@@ -144,7 +144,7 @@ public class Main implements AutoCloseable {
                 Future<?> task = es.submit(r);
                 tasks.add(task);
             }
-            LOG.info("Test started...");
+            LOG.info("Test started, {} tasks submitted...", tasks.size());
             waitForCompletion(tasks);
             long elapsedSeconds = startedAt.until(Instant.now(), ChronoUnit.SECONDS);
             LOG.info("Test successful, total {} iterations in {} seconds!",
@@ -280,6 +280,7 @@ public class Main implements AutoCloseable {
     private void simpleTestTask(List<String> ids) {
         tasksRunning.incrementAndGet();
         try {
+            LOG.info("Iteration on id set {}", ids.size());
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
                 runWithRetry(true, (con) -> simpleTestIter(con, ids));
                 itemsCompleted.incrementAndGet();
