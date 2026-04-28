@@ -19,6 +19,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,6 +39,10 @@ import com.zaxxer.hikari.HikariDataSource;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
+import tech.ydb.table.values.ListType;
+import tech.ydb.table.values.ListValue;
+import tech.ydb.table.values.PrimitiveType;
+import tech.ydb.table.values.PrimitiveValue;
 
 /**
  *
@@ -56,6 +61,7 @@ public class Main implements AutoCloseable {
     private final AtomicLong itemsCompleted = new AtomicLong();
     private final AtomicLong itemsExpected = new AtomicLong();
     private final AtomicLong rowsCompleted = new AtomicLong();
+    private final AtomicLong charsRead = new AtomicLong();
 
     public Main(Config sc) {
         this.config = sc;
@@ -86,9 +92,8 @@ public class Main implements AutoCloseable {
         ExecutorService es = Executors.newFixedThreadPool(config.getGeneratorThreads());
         try {
             LOG.info("Submitting fill tasks with UUIDv8={} ...", config.isUuidV8());
-            List<Future<?>> tasks = new ArrayList<Future<?>>();
-            itemsCompleted.set(0L);
-            rowsCompleted.set(0L);
+            List<Future<?>> tasks = new ArrayList<>();
+            clearCounters();
             // one task per date
             LocalDate current = config.getGeneratorStart();
             while (!current.isAfter(config.getGeneratorFinish())) {
@@ -107,19 +112,36 @@ public class Main implements AutoCloseable {
         }
     }
 
-    public void actionTest() throws Exception {
+    public void actionTestSimple() throws Exception {
+        LocalDate testDay = config.getTestDay();
+        LOG.info("Loading identifiers for {}...", testDay);
+        List<String> ids = loadIds(testDay);
+        LOG.info("Total {} identifiers for {}.", ids.size(), testDay);
+        submitTests("TEST_SIMPLE", () -> simpleTestTask(ids));
+    }
+
+    public void actionTestComplex() throws Exception {
+        LocalDate testDay = config.getTestDay();
+        submitTests("TEST_COMPLEX", () -> complexTestTask(testDay));
+    }
+
+    private void clearCounters() {
+        itemsCompleted.set(0L);
+        rowsCompleted.set(0L);
+        charsRead.set(0L);
+    }
+
+    private void submitTests(String name, Runnable r) throws Exception {
         ExecutorService es = Executors.newFixedThreadPool(config.getTestThreads());
         try {
-            LOG.info("Submitting test tasks...");
-            ArrayList<Future<?>> tasks = new ArrayList<Future<?>>();
-            itemsCompleted.set(0L);
-            rowsCompleted.set(0L);
+            LOG.info("Starting {}, submitting test tasks...", name);
+            ArrayList<Future<?>> tasks = new ArrayList<>();
+            clearCounters();
             itemsExpected.set(1L * config.getTestThreads()
                     * 1L * config.getTestIterations());
             Instant startedAt = Instant.now();
-            LocalDate testDay = config.getTestDay();
             for (int i = 0; i < config.getTestThreads(); ++i) {
-                Future<?> task = es.submit(() -> testTask(testDay));
+                Future<?> task = es.submit(r);
                 tasks.add(task);
             }
             LOG.info("Test started...");
@@ -149,15 +171,13 @@ public class Main implements AutoCloseable {
 
     public static void main(String[] args) {
         if (args.length != 2) {
-            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST | CLEAN | PRINT | LAYOUT | ORDER }");
+            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST_SIMPLE | TEST_COMPLEX | CLEAN | PRINT | LAYOUT | ORDER }");
             System.exit(2);
         }
         try {
             Action action = Action.valueOf(args[1]);
             LOG.info("Reading configuration {}...", args[0]);
-            Config config = readConfig(args[0]);
-            Main m = new Main(config);
-            try {
+            try (Main m = new Main(readConfig(args[0]))) {
                 LOG.info("Initialized, executing {}.", action);
                 switch (action) {
                     case INIT:
@@ -166,8 +186,11 @@ public class Main implements AutoCloseable {
                     case FILL:
                         m.actionFill();
                         break;
-                    case TEST:
-                        m.actionTest();
+                    case TEST_SIMPLE:
+                        m.actionTestSimple();
+                        break;
+                    case TEST_COMPLEX:
+                        m.actionTestComplex();
                         break;
                     case CLEAN:
                         m.actionClean();
@@ -182,8 +205,6 @@ public class Main implements AutoCloseable {
                         m.actionOrder();
                         break;
                 }
-            } finally {
-                m.close();
             }
             LOG.info("Completed, shutting down.");
         } catch (Exception ex) {
@@ -234,11 +255,33 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private void testTask(LocalDate testDay) {
+    private List<String> loadIds(LocalDate testDay) throws Exception {
+        List<String> output = new ArrayList<String>();
+        runWithRetry(true, (con) -> loadIds(con, testDay, output));
+        return output;
+    }
+
+    private void loadIds(Connection con, LocalDate testDay, List<String> output) throws Exception {
+        Instant tvStart = testDay.atStartOfDay(timeZone).toInstant();
+        Instant tvFinish = testDay.atStartOfDay(timeZone).plusDays(1L).toInstant();
+        String sql = "SELECT tv, id FROM `key_prefix_demo/main` VIEW ix_tv "
+                + "WHERE tv BETWEEN ? AND ? ORDER BY tv, id";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.from(tvStart));
+            ps.setTimestamp(2, Timestamp.from(tvFinish));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    output.add(rs.getString(2));
+                }
+            }
+        }
+    }
+
+    private void simpleTestTask(List<String> ids) {
         tasksRunning.incrementAndGet();
         try {
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
-                runWithRetry(true, (con) -> testTaskIter(con, testDay));
+                runWithRetry(true, (con) -> simpleTestIter(con, ids));
                 itemsCompleted.incrementAndGet();
             }
         } finally {
@@ -246,8 +289,90 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private void testTaskIter(Connection con, LocalDate testDay) throws Exception {
+    private List<String> randomSubset(List<String> ids, int size) {
+        if (size >= ids.size()) {
+            return ids;
+        }
+        Random r = ThreadLocalRandom.current();
+        List<String> subset = new ArrayList<>(size);
+        for (int i = 0; i < size; ++i) {
+            boolean next = true;
+            while (next) {
+                String v = ids.get(r.nextInt(ids.size()));
+                if (!subset.contains(v)) {
+                    subset.add(v);
+                    next = false;
+                }
+            }
+        }
+        return subset;
+    }
+
+    private ListValue convertList(List<String> ids) {
+        PrimitiveValue temp[] = new PrimitiveValue[ids.size()];
+        for (int i = 0; i < temp.length; ++i) {
+            temp[i] = PrimitiveValue.newText(ids.get(i));
+        }
+        return ListType.of(PrimitiveType.Text).newValueOwn(temp);
+    }
+
+    private void simpleTestIter(Connection con, List<String> ids) throws Exception {
         int rows = 0;
+        int textLen = 0;
+        String sql;
+        List<String> inputs = randomSubset(ids, config.getTestRows());
+        List<String> subids = new ArrayList<>(inputs.size());
+
+        sql = "DECLARE $p1 AS List<Text>; "
+                + "SELECT id, tv, collection_id, ballast1 "
+                + "FROM `key_prefix_demo/main` "
+                + "WHERE id IN $p1;";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setObject(1, convertList(inputs));
+            try (ResultSet rs = ps.executeQuery()) {
+                ps.setObject(1, rs);
+                while (rs.next()) {
+                    subids.add(rs.getString(3));
+                    textLen += rs.getString(4).length();
+                    ++rows;
+                }
+            }
+        }
+
+        sql = "DECLARE $p1 AS List<Text>; "
+                + "SELECT id, ref_id, tv, ballast2 "
+                + "FROM `key_prefix_demo/sub` "
+                + "WHERE id IN $p1;";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setObject(1, convertList(subids));
+            try (ResultSet rs = ps.executeQuery()) {
+                ps.setObject(1, rs);
+                while (rs.next()) {
+                    textLen += rs.getString(4).length();
+                    ++rows;
+                }
+            }
+        }
+
+        rowsCompleted.addAndGet(rows);
+        charsRead.addAndGet(textLen);
+    }
+
+    private void complexTestTask(LocalDate testDay) {
+        tasksRunning.incrementAndGet();
+        try {
+            for (int iter = 0; iter < config.getTestIterations(); ++iter) {
+                runWithRetry(true, (con) -> complexTestIter(con, testDay));
+                itemsCompleted.incrementAndGet();
+            }
+        } finally {
+            tasksRunning.decrementAndGet();
+        }
+    }
+
+    private void complexTestIter(Connection con, LocalDate testDay) throws Exception {
+        int rows = 0;
+        int textLen = 0;
         long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 23L);
         ZonedDateTime tv = testDay.atStartOfDay(timeZone).plus(seconds, ChronoUnit.SECONDS);
         Timestamp ts = Timestamp.from(tv.toInstant());
@@ -267,6 +392,8 @@ public class Main implements AutoCloseable {
             ps.setInt(2, config.getTestRows());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                    textLen += rs.getString(4).length();
+                    textLen += rs.getString(5).length();
                     ++rows;
                 }
             }
@@ -286,12 +413,15 @@ public class Main implements AutoCloseable {
             ps.setInt(2, config.getTestRows());
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
+                    textLen += rs.getString(4).length();
+                    textLen += rs.getString(5).length();
                     ++rows;
                 }
             }
         }
 
         rowsCompleted.addAndGet(rows);
+        charsRead.addAndGet(textLen);
     }
 
     private void fillDate(LocalDate dt) {
@@ -498,7 +628,7 @@ public class Main implements AutoCloseable {
             lsb = (lsb << 8) | (input[i] & 0xff);
         }
         long msb2 = UuidKeyGen.reorder(msb);
-        String sql = "                     SELECT ToBytes(?), ToBytes(?);\n";
+        String sql = "SELECT ToBytes(?), ToBytes(?);";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setObject(1, new UUID(msb, lsb));
             ps.setObject(2, new UUID(msb2, lsb));
@@ -641,7 +771,8 @@ public class Main implements AutoCloseable {
     public enum Action {
         INIT,
         FILL,
-        TEST,
+        TEST_SIMPLE,
+        TEST_COMPLEX,
         CLEAN,
         PRINT,
         LAYOUT,
