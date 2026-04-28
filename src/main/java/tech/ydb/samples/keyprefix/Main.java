@@ -119,7 +119,7 @@ public class Main implements AutoCloseable {
         }
         LocalDate testDay = config.getTestDay();
         LOG.info("Loading identifiers for {}...", testDay);
-        List<String> ids = loadIds(testDay);
+        List<UUID> ids = loadIds(testDay);
         LOG.info("Total {} identifiers for {}.", ids.size(), testDay);
         submitTests("TEST_SIMPLE", () -> simpleTestTask(ids));
     }
@@ -263,13 +263,13 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private List<String> loadIds(LocalDate testDay) throws Exception {
-        List<String> output = new ArrayList<String>();
+    private List<UUID> loadIds(LocalDate testDay) throws Exception {
+        List<UUID> output = new ArrayList<>();
         runWithRetry(true, (con) -> loadIds(con, testDay, output));
         return output;
     }
 
-    private void loadIds(Connection con, LocalDate testDay, List<String> output) throws Exception {
+    private void loadIds(Connection con, LocalDate testDay, List<UUID> output) throws Exception {
         Instant tvStart = testDay.atStartOfDay(timeZone).toInstant();
         Instant tvFinish = testDay.atStartOfDay(timeZone).plusDays(1L).toInstant();
         String sql = "SELECT tv, id FROM `key_prefix_demo/main` VIEW ix_tv "
@@ -279,13 +279,13 @@ public class Main implements AutoCloseable {
             ps.setTimestamp(2, Timestamp.from(tvFinish));
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    output.add(rs.getString(2));
+                    output.add(UUID.fromString(rs.getString(2)));
                 }
             }
         }
     }
 
-    private void simpleTestTask(List<String> ids) {
+    private void simpleTestTask(List<UUID> ids) {
         tasksRunning.incrementAndGet();
         try {
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
@@ -299,16 +299,16 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private List<String> randomSubset(List<String> ids, int size) {
+    private <T> List<T> randomSubset(List<T> ids, int size) {
         if (size >= ids.size()) {
             return ids;
         }
         Random r = ThreadLocalRandom.current();
-        List<String> subset = new ArrayList<>(size);
+        List<T> subset = new ArrayList<>(size);
         for (int i = 0; i < size; ++i) {
             boolean next = true;
             while (next) {
-                String v = ids.get(r.nextInt(ids.size()));
+                T v = ids.get(r.nextInt(ids.size()));
                 if (!subset.contains(v)) {
                     subset.add(v);
                     next = false;
@@ -318,22 +318,22 @@ public class Main implements AutoCloseable {
         return subset;
     }
 
-    private ListValue convertList(List<String> ids) {
+    private ListValue convertList(List<UUID> ids) {
         PrimitiveValue temp[] = new PrimitiveValue[ids.size()];
         for (int i = 0; i < temp.length; ++i) {
-            temp[i] = PrimitiveValue.newText(ids.get(i));
+            temp[i] = PrimitiveValue.newUuid(ids.get(i));
         }
-        return ListType.of(PrimitiveType.Text).newValueOwn(temp);
+        return ListType.of(PrimitiveType.Uuid).newValueOwn(temp);
     }
 
-    private void simpleTestIter(Connection con, List<String> ids) throws Exception {
+    private void simpleTestIter(Connection con, List<UUID> ids) throws Exception {
         int rows = 0;
         int textLen = 0;
         String sql;
-        List<String> inputs = randomSubset(ids, config.getTestRows());
-        List<String> subids = new ArrayList<>(inputs.size());
+        List<UUID> inputs = randomSubset(ids, config.getTestRows());
+        List<UUID> subids = new ArrayList<>(inputs.size());
 
-        sql = "DECLARE $p1 AS List<Text>; "
+        sql = "DECLARE $p1 AS List<Uuid>; "
                 + "SELECT id, tv, collection_id, ballast1 "
                 + "FROM `key_prefix_demo/main` "
                 + "WHERE id IN $p1;";
@@ -342,14 +342,14 @@ public class Main implements AutoCloseable {
             try (ResultSet rs = ps.executeQuery()) {
                 ps.setObject(1, rs);
                 while (rs.next()) {
-                    subids.add(rs.getString(3));
+                    subids.add(UUID.fromString(rs.getString(3)));
                     textLen += rs.getString(4).length();
                     ++rows;
                 }
             }
         }
 
-        sql = "DECLARE $p1 AS List<Text>; "
+        sql = "DECLARE $p1 AS List<Uuid>; "
                 + "SELECT id, ref_id, tv, ballast2 "
                 + "FROM `key_prefix_demo/sub` "
                 + "WHERE id IN $p1;";
