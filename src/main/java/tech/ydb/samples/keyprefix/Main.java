@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.util.function.Supplier;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
@@ -119,7 +120,7 @@ public class Main implements AutoCloseable {
         }
         LocalDate testDay = config.getTestDay();
         LOG.info("Loading identifiers for {}...", testDay);
-        List<UUID> ids = loadIds(testDay);
+        List<UUID> ids = loadIds();
         LOG.info("Total {} identifiers for {}.", ids.size(), testDay);
         submitTests("TEST_SIMPLE", () -> simpleTestTask(ids));
     }
@@ -130,7 +131,7 @@ public class Main implements AutoCloseable {
             config.setTestIterations(100);
         }
         LocalDate testDay = config.getTestDay();
-        submitTests("TEST_COMPLEX", () -> complexTestTask(testDay));
+        submitTests("TEST_COMPLEX", () -> complexTestTask(() -> testDay));
     }
 
     private void clearCounters() {
@@ -263,9 +264,11 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private List<UUID> loadIds(LocalDate testDay) throws Exception {
+    private List<UUID> loadIds() throws Exception {
         List<UUID> output = new ArrayList<>();
-        runWithRetry(true, (con) -> loadIds(con, testDay, output));
+        for (LocalDate testDay : config.getTestDays()) {
+            runWithRetry(true, (con) -> loadIds(con, testDay, output));
+        }
         return output;
     }
 
@@ -366,11 +369,11 @@ public class Main implements AutoCloseable {
         charsRead.addAndGet(textLen);
     }
 
-    private void complexTestTask(LocalDate testDay) {
+    private void complexTestTask(Supplier<LocalDate> dateSipplier) {
         tasksRunning.incrementAndGet();
         try {
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
-                runWithRetry(true, (con) -> complexTestIter(con, testDay));
+                runWithRetry(true, (con) -> complexTestIter(con, dateSipplier.get()));
                 itemsCompleted.incrementAndGet();
             }
         } catch (Exception ex) {
@@ -749,7 +752,10 @@ public class Main implements AutoCloseable {
         }
         v = props.getProperty("test.day");
         if (v != null) {
-            config.setTestDay(LocalDate.parse(v));
+            String[] vs = v.split("[,]");
+            for (String vv : vs) {
+                config.addTestDay(LocalDate.parse(vv));
+            }
         }
         v = props.getProperty("test.iterations");
         if (v != null) {
@@ -802,7 +808,7 @@ public class Main implements AutoCloseable {
         private int generatorThreads = 4;
         private int testThreads = 4;
         private int testRows = 10;
-        private LocalDate testDay;
+        private final List<LocalDate> testDays = new ArrayList<>();
         private int testIterations = 100;
         private int retryCount = 10;
         private boolean uuidV8 = true;
@@ -895,12 +901,19 @@ public class Main implements AutoCloseable {
             this.testRows = testRows;
         }
 
-        public LocalDate getTestDay() {
-            return testDay;
+        public List<LocalDate> getTestDays() {
+            return testDays;
         }
 
-        public void setTestDay(LocalDate testDay) {
-            this.testDay = testDay;
+        public LocalDate getTestDay() {
+            if (testDays.isEmpty()) {
+                throw new IllegalStateException("Missing value for 'testDay' in the settings");
+            }
+            return testDays.iterator().next();
+        }
+
+        public void addTestDay(LocalDate testDay) {
+            this.testDays.add(testDay);
         }
 
         public int getTestIterations() {
