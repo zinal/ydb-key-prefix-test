@@ -449,7 +449,7 @@ public class Main implements AutoCloseable {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
                 long prefix = newPrefix();
                 Instant tv = newTv(dt);
-                List<DataEntry> entries = IntStream.range(0, 200)
+                List<DataEntry> entries = IntStream.range(0, 1000)
                         .mapToObj(ix -> newDataEntry(ix, prefix, tv))
                         .collect(Collectors.toList());
                 runWithRetry(false, (con) -> fillDateStep(con, entries));
@@ -466,32 +466,29 @@ public class Main implements AutoCloseable {
     }
 
     private void fillDateStep(Connection con, List<DataEntry> entries) throws Exception {
-        // 5 iterations for 200 lines each
-        for (int i = 0; i < 5; ++i) {
-            String sql = "UPSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1) "
-                    + "VALUES(?, ?, ?, ?);";
-            try (PreparedStatement ps = con.prepareStatement(sql)) {
-                for (DataEntry entry : entries) {
-                    ps.setObject(1, entry.mainId);
-                    ps.setObject(2, entry.refId);
-                    ps.setTimestamp(3, Timestamp.from(entry.tv));
-                    ps.setString(4, entry.ballast1);
-                    ps.addBatch();
-                }
-                ps.executeBatch();
+        String sql = "UPSERT INTO `key_prefix_demo/main`(id, collection_id, tv, ballast1) "
+                + "VALUES(?, ?, ?, ?);";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            for (DataEntry entry : entries) {
+                ps.setObject(1, entry.mainId);
+                ps.setObject(2, entry.refId);
+                ps.setTimestamp(3, Timestamp.from(entry.tv));
+                ps.setString(4, entry.ballast1);
+                ps.addBatch();
             }
-            sql = "UPSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2) "
-                    + "VALUES(?, ?, ?, ?);";
-            try (PreparedStatement ps = con.prepareStatement(sql)) {
-                for (DataEntry entry : entries) {
-                    ps.setObject(1, entry.subId);
-                    ps.setObject(2, entry.refId);
-                    ps.setTimestamp(3, Timestamp.from(entry.tv));
-                    ps.setString(4, entry.ballast2);
-                    ps.addBatch();
-                }
-                ps.executeBatch();
+            ps.executeBatch();
+        }
+        sql = "UPSERT INTO `key_prefix_demo/sub`(id, ref_id, tv, ballast2) "
+                + "VALUES(?, ?, ?, ?);";
+        try (PreparedStatement ps = con.prepareStatement(sql)) {
+            for (DataEntry entry : entries) {
+                ps.setObject(1, entry.subId);
+                ps.setObject(2, entry.refId);
+                ps.setTimestamp(3, Timestamp.from(entry.tv));
+                ps.setString(4, entry.ballast2);
+                ps.addBatch();
             }
+            ps.executeBatch();
         }
     }
 
