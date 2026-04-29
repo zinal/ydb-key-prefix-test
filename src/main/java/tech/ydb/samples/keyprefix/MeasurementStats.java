@@ -3,12 +3,16 @@ package tech.ydb.samples.keyprefix;
 import org.HdrHistogram.Histogram;
 
 /**
- * Aggregates latency and retry statistics for transactional retry invocations (success and failure).
- * Durations are recorded in an {@link Histogram} so percentiles are derived without storing every sample.
+ * Aggregates latency and retry statistics for transactional retry invocations
+ * (success and failure). Durations are recorded in an {@link Histogram} so
+ * percentiles are derived without storing every sample.
  */
 final class MeasurementStats {
 
-    /** Upper bound for a single observed duration (24 hours in ns); values are clamped when recording. */
+    /**
+     * Upper bound for a single observed duration (24 hours in ns); values are
+     * clamped when recording.
+     */
     private static final long MAX_TRACKABLE_DURATION_NS = 24L * 60L * 60L * 1_000_000_000L;
 
     private static final int SIGNIFICANT_VALUE_DIGITS = 3;
@@ -46,7 +50,8 @@ final class MeasurementStats {
     }
 
     /**
-     * @param retryCount retries attributed to this invocation (success case: value returned by {@code runWithRetry})
+     * @param retryCount retries attributed to this invocation (success case:
+     * value returned by {@code runWithRetry})
      */
     void record(long durationNanos, int retryCount, boolean success) {
         synchronized (lock) {
@@ -74,7 +79,7 @@ final class MeasurementStats {
     void print() {
         synchronized (lock) {
             if (count == 0) {
-                System.out.println("RetryMeasurementStats: no samples.");
+                System.out.println("MeasurementStats: no samples.");
                 return;
             }
             double avgNanos = ((double) sumNanos) / count;
@@ -84,7 +89,7 @@ final class MeasurementStats {
             long p90 = (long) durationHistogram.getValueAtPercentile(90.0);
             long p99 = (long) durationHistogram.getValueAtPercentile(99.0);
 
-            System.out.println("RetryMeasurementStats:");
+            System.out.println("MeasurementStats:");
             System.out.println("  samples:               " + count);
             System.out.println("  errors:                " + errors);
             System.out.println("  time total (ms):       " + formatMillis(sumNanos));
