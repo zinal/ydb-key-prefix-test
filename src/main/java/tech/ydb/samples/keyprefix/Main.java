@@ -65,6 +65,7 @@ public class Main implements AutoCloseable {
     private final AtomicLong itemsExpected = new AtomicLong();
     private final AtomicLong rowsCompleted = new AtomicLong();
     private final AtomicLong charsRead = new AtomicLong();
+    private final MeasurementStats retryMeasurementStats = new MeasurementStats();
 
     public Main(Config sc) {
         this.config = sc;
@@ -148,6 +149,7 @@ public class Main implements AutoCloseable {
             LOG.info("Starting {}, submitting test tasks...", name);
             ArrayList<Future<?>> tasks = new ArrayList<>();
             clearCounters();
+            retryMeasurementStats.reset();
             itemsExpected.set(1L * config.getTestThreads()
                     * 1L * config.getTestIterations());
             Instant startedAt = Instant.now();
@@ -160,6 +162,7 @@ public class Main implements AutoCloseable {
             long elapsedSeconds = startedAt.until(Instant.now(), ChronoUnit.SECONDS);
             LOG.info("Test successful, total {} iterations in {} seconds!",
                     itemsCompleted.get(), elapsedSeconds);
+            retryMeasurementStats.print();
         } finally {
             shutdownExecutor(es);
         }
@@ -294,7 +297,7 @@ public class Main implements AutoCloseable {
         tasksRunning.incrementAndGet();
         try {
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
-                runWithRetry(true, (con) -> simpleTestIter(con, ids));
+                runWithMeasurement(true, (con) -> simpleTestIter(con, ids));
                 itemsCompleted.incrementAndGet();
             }
         } catch (Exception ex) {
@@ -375,7 +378,7 @@ public class Main implements AutoCloseable {
         tasksRunning.incrementAndGet();
         try {
             for (int iter = 0; iter < config.getTestIterations(); ++iter) {
-                runWithRetry(true, (con) -> complexTestIter(con, dateSipplier.get()));
+                runWithMeasurement(true, (con) -> complexTestIter(con, dateSipplier.get()));
                 itemsCompleted.incrementAndGet();
             }
         } catch (Exception ex) {
@@ -559,6 +562,18 @@ public class Main implements AutoCloseable {
             throw new RuntimeException("Failed to read file " + fname, ix);
         }
         return lines;
+    }
+
+    private int runWithMeasurement(boolean readonly, ExConsumer<Connection> action) {
+        long t0 = System.nanoTime();
+        try {
+            int retryCount = runWithRetry(readonly, action);
+            retryMeasurementStats.record(System.nanoTime() - t0, retryCount, true);
+            return retryCount;
+        } catch (RuntimeException ex) {
+            retryMeasurementStats.record(System.nanoTime() - t0, 0, false);
+            throw ex;
+        }
     }
 
     private int runWithRetry(boolean readonly, ExConsumer<Connection> action) {
