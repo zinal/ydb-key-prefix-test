@@ -17,6 +17,8 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Properties;
 import java.util.Random;
@@ -28,6 +30,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -36,7 +39,6 @@ import org.slf4j.LoggerFactory;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
-import java.util.function.Supplier;
 
 import tech.ydb.jdbc.exception.YdbConditionallyRetryableException;
 import tech.ydb.jdbc.exception.YdbRetryableException;
@@ -265,14 +267,14 @@ public class Main implements AutoCloseable {
     }
 
     private List<UUID> loadIds() throws Exception {
-        List<UUID> output = new ArrayList<>();
+        HashSet<UUID> output = new HashSet<>();
         for (LocalDate testDay : config.getTestDays()) {
             runWithRetry(true, (con) -> loadIds(con, testDay, output));
         }
-        return output;
+        return new ArrayList<>(output);
     }
 
-    private void loadIds(Connection con, LocalDate testDay, List<UUID> output) throws Exception {
+    private void loadIds(Connection con, LocalDate testDay, Collection<UUID> output) throws Exception {
         Instant tvStart = testDay.atStartOfDay(timeZone).toInstant();
         Instant tvFinish = testDay.atStartOfDay(timeZone).plusDays(1L).toInstant();
         String sql = "SELECT tv, id FROM `key_prefix_demo/main` VIEW ix_tv "
