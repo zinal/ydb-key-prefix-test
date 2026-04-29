@@ -355,8 +355,8 @@ public class Main implements AutoCloseable {
 
         sql = "DECLARE $p1 AS List<Uuid>; "
                 + "SELECT id, ref_id, tv, ballast2 "
-                + "FROM `key_prefix_demo/sub` "
-                + "WHERE id IN $p1;";
+                + "FROM `key_prefix_demo/sub` VIEW ix_ref "
+                + "WHERE ref_id IN $p1;";
         try (PreparedStatement ps = con.prepareStatement(sql)) {
             ps.setObject(1, convertList(subids));
             try (ResultSet rs = ps.executeQuery()) {
