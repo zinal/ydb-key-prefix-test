@@ -123,7 +123,7 @@ public class Main implements AutoCloseable {
         }
         LocalDate testDay = config.getTestDay();
         LOG.info("Loading identifiers for {}...", testDay);
-        List<UUID> ids = loadIds();
+        List<UUID> ids = readIds();
         LOG.info("Total {} identifiers for {}.", ids.size(), testDay);
         submitTests("TEST_SIMPLE", () -> simpleTestTask(ids));
     }
@@ -269,15 +269,15 @@ public class Main implements AutoCloseable {
         }
     }
 
-    private List<UUID> loadIds() throws Exception {
+    private List<UUID> readIds() throws Exception {
         HashSet<UUID> output = new HashSet<>();
         for (LocalDate testDay : config.getTestDays()) {
-            runWithRetry(true, (con) -> loadIds(con, testDay, output));
+            runWithRetry(true, (con) -> readIds(con, testDay, output));
         }
         return new ArrayList<>(output);
     }
 
-    private void loadIds(Connection con, LocalDate testDay, Collection<UUID> output) throws Exception {
+    private void readIds(Connection con, LocalDate testDay, Collection<UUID> output) throws Exception {
         Instant tvStart = testDay.atStartOfDay(timeZone).toInstant();
         Instant tvFinish = testDay.atStartOfDay(timeZone).plusDays(1L).toInstant();
         String sql = "SELECT tv, id FROM `key_prefix_demo/main` VIEW ix_tv "
@@ -447,14 +447,17 @@ public class Main implements AutoCloseable {
         tasksRunning.incrementAndGet();
         try {
             for (int i = 0; i < config.getGeneratorScale(); ++i) {
-                long prefix = newPrefix();
-                Instant tv = newTv(dt);
-                List<DataEntry> entries = IntStream.range(0, 1000)
-                        .mapToObj(ix -> newDataEntry(ix, prefix, tv))
-                        .collect(Collectors.toList());
-                runWithRetry(false, (con) -> fillDateStep(con, entries));
+                // 5 x 200 == 1000
+                for (int j = 0; j < 5; ++j) {
+                    long prefix = newPrefix();
+                    Instant tv = newTv(dt);
+                    List<DataEntry> entries = IntStream.range(0, 200)
+                            .mapToObj(ix -> newDataEntry(ix, prefix, tv))
+                            .collect(Collectors.toList());
+                    runWithRetry(false, (con) -> fillDateStep(con, entries));
+                    rowsCompleted.addAndGet(2 * entries.size());
+                }
                 itemsCompleted.incrementAndGet();
-                rowsCompleted.addAndGet(2 * entries.size());
             }
         } catch (Exception ex) {
             LOG.error("Failed to fill for {}", dt, ex);
@@ -506,7 +509,7 @@ public class Main implements AutoCloseable {
 
     private Instant newTv(LocalDate dt) {
         ZonedDateTime tv = dt.atStartOfDay(timeZone);
-        long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 24L);
+        long seconds = ThreadLocalRandom.current().nextLong(0L, 60L * 60L * 23L);
         tv = tv.plus(seconds, ChronoUnit.SECONDS);
         return tv.toInstant();
     }
