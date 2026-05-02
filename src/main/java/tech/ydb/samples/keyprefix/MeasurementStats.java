@@ -10,10 +10,10 @@ import org.HdrHistogram.Histogram;
 final class MeasurementStats {
 
     /**
-     * Upper bound for a single observed duration (24 hours in ns); values are
+     * Upper bound for a single observed duration (10 minutes in ns); values are
      * clamped when recording.
      */
-    private static final long MAX_TRACKABLE_DURATION_NS = 24L * 60L * 60L * 1_000_000_000L;
+    private static final long MAX_TRACKABLE_DURATION_NS = 10L * 60L * 1_000_000_000L;
 
     private static final int SIGNIFICANT_VALUE_DIGITS = 3;
 
