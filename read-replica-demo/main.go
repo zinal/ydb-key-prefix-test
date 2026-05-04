@@ -33,6 +33,9 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
 )
 
+// YQL table name relative to the database (see also fullTablePath for DescribeTable).
+const mainDemoTable = "key_prefix_demo/main"
+
 func main() {
 	log.SetFlags(0)
 
@@ -44,7 +47,6 @@ func main() {
 	mode := os.Args[1]
 	fs := flag.NewFlagSet(mode, flag.ExitOnError)
 	ydbDSN := fs.String("ydb", "", "YDB connection string (required)")
-	tablePath := fs.String("table", "key_prefix_demo/main", "Table path relative to database root")
 
 	switch mode {
 	case "dump-keys":
@@ -54,7 +56,7 @@ func main() {
 		if *ydbDSN == "" {
 			log.Fatal("-ydb is required")
 		}
-		if err := runDumpKeys(context.Background(), *ydbDSN, *tablePath, *outPath, *pageSize); err != nil {
+		if err := runDumpKeys(context.Background(), *ydbDSN, *outPath, *pageSize); err != nil {
 			log.Fatal(err)
 		}
 	case "test-reads":
@@ -70,7 +72,7 @@ func main() {
 		if *keyset <= 0 || *batch <= 0 || *rounds <= 0 {
 			log.Fatal("-keyset, -batch, and -rounds must be positive")
 		}
-		if err := runTestReads(context.Background(), *ydbDSN, *tablePath, *keyFile, *keyset, *batch, *rounds, *seed); err != nil {
+		if err := runTestReads(context.Background(), *ydbDSN, *keyFile, *keyset, *batch, *rounds, *seed); err != nil {
 			log.Fatal(err)
 		}
 	default:
@@ -81,8 +83,8 @@ func main() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  %s dump-keys  -ydb <dsn> [-table path] [-out file] [-page-size N]
-  %s test-reads -ydb <dsn> [-table path] [-keys file] [-keyset N] [-batch N] [-rounds N] [-seed N]
+  %s dump-keys  -ydb <dsn> [-out file] [-page-size N]
+  %s test-reads -ydb <dsn> [-keys file] [-keyset N] [-batch N] [-rounds N] [-seed N]
 
 Environment credentials follow ydb-go-sdk-auth-environ (e.g. YDB_ANONYMOUS_CREDENTIALS=1).
 If both YDB_USER and YDB_PASSWORD are set, static credentials are used instead.
@@ -129,14 +131,13 @@ func compareYDBUUIDOrder(a, b uuid.UUID) int {
 	return slices.Compare(ka[:], kb[:])
 }
 
-func runDumpKeys(ctx context.Context, dsn, tableRel, outPath string, pageSize uint64) error {
+func runDumpKeys(ctx context.Context, dsn, outPath string, pageSize uint64) error {
 	db, err := openDB(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer func() { _ = db.Close(ctx) }()
 
-	tableFull := fullTablePath(db, tableRel)
 	f, err := os.Create(outPath)
 	if err != nil {
 		return fmt.Errorf("create output: %w", err)
@@ -154,14 +155,12 @@ func runDumpKeys(ctx context.Context, dsn, tableRel, outPath string, pageSize ui
 			// ORDER BY id uses MiniKQL CompareValues<Uuid> (memcmp on the same 16 bytes as
 			// datashard cells), not canonical UUID text order. Do not use CAST(id AS String):
 			// that sorts the human-readable form (mkql_type_ops ValueToString), which differs.
-			q := fmt.Sprintf(`
-				DECLARE $limit AS Uint64;
-				DECLARE $last AS Uuid;
-				SELECT id FROM %s
-				WHERE id > $last
-				ORDER BY id
-				LIMIT $limit;
-			`, "`"+tableFull+"`")
+			q := `DECLARE $limit AS Uint64;
+DECLARE $last AS Uuid;
+SELECT id FROM ` + "`" + mainDemoTable + "`" + `
+WHERE id > $last
+ORDER BY id
+LIMIT $limit;`
 
 			_, res, err := s.Execute(ctx, readTx, q, table.NewQueryParameters(
 				table.ValueParam("$limit", types.Uint64Value(pageSize)),
@@ -360,14 +359,14 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 	return out, size, nil
 }
 
-func runTestReads(ctx context.Context, dsn, tableRel, keyFile string, keysetSize, batchSize, rounds int, seed int64) error {
+func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSize, rounds int, seed int64) error {
 	db, err := openDB(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer func() { _ = db.Close(ctx) }()
 
-	tableFull := fullTablePath(db, tableRel)
+	tableFull := fullTablePath(db, mainDemoTable)
 
 	var pr *partitionRouter
 	err = db.Table().Do(ctx, func(ctx context.Context, s table.Session) error {
@@ -443,12 +442,10 @@ func runTestReads(ctx context.Context, dsn, tableRel, keyFile string, keysetSize
 				}
 				params := ydb.ParamsBuilder().Param("$ids").BeginList().AddItems(items...).EndList().Build()
 
-				q := fmt.Sprintf(`
-					DECLARE $ids AS List<Struct<id: Uuid>>;
-					SELECT m.id AS id
-					FROM %s AS m
-					INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;
-				`, "`"+tableFull+"`")
+				q := `DECLARE $ids AS List<Struct<id: Uuid>>;
+SELECT m.id AS id
+FROM ` + "`" + mainDemoTable + "`" + ` AS m
+INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 
 				err := db.Query().DoTx(partCtx, func(ctx context.Context, tx query.TxActor) error {
 					rs, err := tx.QueryResultSet(ctx, q, query.WithParameters(params))
