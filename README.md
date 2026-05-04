@@ -85,6 +85,61 @@ The JDBC pool size is set to **twice** the larger of **`gen.threads`** and **`te
 
 **`TEST`** is a **live integration** workload: latency and throughput depend on cluster size, data volume, and partitioning. It exercises the same access path as typical time-range + index + join traffic on the demo schema, so you can contrast runs with **`gen.uuid.v8`** **`true`** vs **`false`** after reloading data.
 
+## Test results
+
+### Infrastructure
+
+YDB Server version: `25.2.1.ent.9`
+
+12-node mirror-3dc cluster deployed on virtual machines in Yandex Cloud.
+
+Each node had the following configuration:
+
+* 16 x vCPU
+* 32 GiB RAM
+* Software-accelerated network enabled
+* 1 x 50 GiB network-ssd for OS and YDB installation
+* 2 x 588 GiB network-ssd-nonreplicated for YDB data
+
+**Note**: the amount of RAM per host has been set relatively low to decrease the effective size of the cache. This allows to catch the difference between the `v4` and `v8` ID generation schemes on a smaller dataset, decreasing the requirements for dataset generation time and disks size.
+
+### Dataset overview
+
+All tests have been performed with the following parameter settings:
+
+| **Parameter** | **Value** |
+| - | - |
+| `gen.scale` | `600` |
+| `gen.start` | `2020-01-01` |
+| `gen.finish` | `2025-12-31` |
+| `test.threads` | `100` |
+| `test.day` | 2020-01-10,2020-02-10,2020-03-10,2020-04-10,2020-05-10,2020-06-10,2020-07-10,2020-08-10,2020-09-10,2020-10-10,2020-11-10,2020-12-10,2021-01-10,2021-02-10,2021-03-10,2021-04-10,2021-05-10,2021-06-10,2021-07-10,2021-08-10,2021-09-10,2021-10-10,2021-11-10,2021-12-10 |
+| `test.iterations` | `50000` |
+| `test.rows` | `10` |
+
+Two datasets were actually generated and used: one with the new `v8` identifiers, and another with the classical `v4` identifiers, regulated by the `gen.uuid.v8=true|false` parameter.
+
+Each dataset generated with these parameters contains 1_315_200_000 rows in each of the `main` and `sub` tables. Table and index sizes are listed below.
+
+| **Object name** | **Data size, GiB** | **Tablet index size, GiB** |
+| - | - | - |
+| `main` | `759.09` | `4.01` |
+| `main/ix_coll` | `62.94` | `0.50` |
+| `main/ix_tv` | `41.00` | `0.31` |
+| `sub` | `759.03` | `4.04` |
+| `sub/ix_ref` | `62.93` | `0.52` |
+| `sub/ix_tv` | `41.02` | `0.33` |
+
+### Results: Simple test
+
+The identifier list for both runs (v4 and v8) contained 14_400_000 items, grepped via the dates specified in the `test.day` setting.
+
+Both for v4 and v8, two test runs were performed, and the second one was accounted (after caches were filled).
+
+| **Test type** | **Samples** | **Errors** | **Retries** | **min** | **avg** | **max** | **p50** | **p90** | **p99** |
+| `v4` | 5_000_000 | `0` | `29` | `11.06` | `39.12` | `572.64` | `37.22` | `50.10` | `76.09` |
+| `v8` | 5_000_000 | `0` | `18` | `6.48` | `20.33` | `649.71` | `19.33` | `24.83` | `35.42` |
+
 ## Building
 
 Maven, Java SDK 21

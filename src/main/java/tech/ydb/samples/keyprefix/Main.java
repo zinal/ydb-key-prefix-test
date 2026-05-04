@@ -80,6 +80,50 @@ public class Main implements AutoCloseable {
         ds.close();
     }
 
+    public static void main(String[] args) {
+        if (args.length != 2) {
+            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST_SIMPLE | TEST_COMPLEX | CLEAN | PRINT | LAYOUT | ORDER }");
+            System.exit(2);
+        }
+        try {
+            Action action = Action.valueOf(args[1]);
+            LOG.info("Reading configuration {}...", args[0]);
+            try (Main m = new Main(readConfig(args[0]))) {
+                LOG.info("Initialized, executing {}.", action);
+                switch (action) {
+                    case INIT:
+                        m.actionInit();
+                        break;
+                    case FILL:
+                        m.actionFill();
+                        break;
+                    case TEST_SIMPLE:
+                        m.actionTestSimple();
+                        break;
+                    case TEST_COMPLEX:
+                        m.actionTestComplex();
+                        break;
+                    case CLEAN:
+                        m.actionClean();
+                        break;
+                    case PRINT:
+                        m.actionPrint();
+                        break;
+                    case LAYOUT:
+                        m.actionLayout();
+                        break;
+                    case ORDER:
+                        m.actionOrder();
+                        break;
+                }
+            }
+            LOG.info("Completed, shutting down.");
+        } catch (Exception ex) {
+            LOG.error("FATAL", ex);
+            System.exit(1);
+        }
+    }
+
     public void actionInit() throws Exception {
         LOG.info("Init started...");
         runDdlScript();
@@ -133,8 +177,7 @@ public class Main implements AutoCloseable {
             LOG.warn("Forced the default 100 test iterations per task");
             config.setTestIterations(100);
         }
-        LocalDate testDay = config.getTestDay();
-        submitTests("TEST_COMPLEX", () -> complexTestTask(() -> testDay));
+        submitTests("TEST_COMPLEX", () -> complexTestTask(config::getRandomTestDay));
     }
 
     private void clearCounters() {
@@ -180,50 +223,6 @@ public class Main implements AutoCloseable {
     public void actionPrint() {
         for (int i = 0; i < 100; ++i) {
             System.out.println(newId(keyGen.nextPrefix(), Instant.now()));
-        }
-    }
-
-    public static void main(String[] args) {
-        if (args.length != 2) {
-            LOG.info("Two arguments are expected: config-file.xml { INIT | FILL | TEST_SIMPLE | TEST_COMPLEX | CLEAN | PRINT | LAYOUT | ORDER }");
-            System.exit(2);
-        }
-        try {
-            Action action = Action.valueOf(args[1]);
-            LOG.info("Reading configuration {}...", args[0]);
-            try (Main m = new Main(readConfig(args[0]))) {
-                LOG.info("Initialized, executing {}.", action);
-                switch (action) {
-                    case INIT:
-                        m.actionInit();
-                        break;
-                    case FILL:
-                        m.actionFill();
-                        break;
-                    case TEST_SIMPLE:
-                        m.actionTestSimple();
-                        break;
-                    case TEST_COMPLEX:
-                        m.actionTestComplex();
-                        break;
-                    case CLEAN:
-                        m.actionClean();
-                        break;
-                    case PRINT:
-                        m.actionPrint();
-                        break;
-                    case LAYOUT:
-                        m.actionLayout();
-                        break;
-                    case ORDER:
-                        m.actionOrder();
-                        break;
-                }
-            }
-            LOG.info("Completed, shutting down.");
-        } catch (Exception ex) {
-            LOG.error("FATAL", ex);
-            System.exit(1);
         }
     }
 
@@ -924,9 +923,17 @@ public class Main implements AutoCloseable {
 
         public LocalDate getTestDay() {
             if (testDays.isEmpty()) {
-                throw new IllegalStateException("Missing value for 'testDay' in the settings");
+                throw new IllegalStateException("Missing value for 'testDay' in the settings [1]");
             }
             return testDays.iterator().next();
+        }
+
+        public LocalDate getRandomTestDay() {
+            if (testDays.isEmpty()) {
+                throw new IllegalStateException("Missing value for 'testDay' in the settings [2]");
+            }
+            int pos = ThreadLocalRandom.current().nextInt(testDays.size());
+            return testDays.get(pos);
         }
 
         public void addTestDay(LocalDate testDay) {
