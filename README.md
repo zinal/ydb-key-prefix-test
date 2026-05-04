@@ -36,6 +36,16 @@ For a **custom transactional pattern**, the API supports generating a sequence o
 
 ## Application example that demonstrates the behavior
 
+### Building the demo app
+
+Maven, Java SDK 21
+
+```bash
+mvn clean package -DskipTests=true
+```
+
+### Running the demo app
+
 The runnable demo is class **`tech.ydb.samples.keyprefix.Main`**. It reads an **XML properties** file (same format as Java `Properties` stored as XML), connects with **YDB JDBC**, and runs one of five **execution modes**. Build the project, point the config at your database, then run the jar with **two arguments**: the config path and the mode name.
 
 ```bash
@@ -81,9 +91,9 @@ All entries are optional unless noted; omitted keys fall back to **Java defaults
 
 The JDBC pool size is set to **twice** the larger of **`gen.threads`** and **`test.threads`**.
 
-### What **`TEST`** is measuring
+### What the tests are measuring
 
-**`TEST`** is a **live integration** workload: latency and throughput depend on cluster size, data volume, and partitioning. It exercises the same access path as typical time-range + index + join traffic on the demo schema, so you can contrast runs with **`gen.uuid.v8`** **`true`** vs **`false`** after reloading data.
+`TEST_SIMPLE` and `TEST_COMPLEX` are both **live integration** workloads: actual latency and throughput depend on cluster size, data volume, and partitioning. The tests exercise the access paths for typical point-lookup (simple) and  time-range + index + join (complex) traffic on the demo schema, so you can contrast runs with **`gen.uuid.v8`** **`true`** vs **`false`** after reloading the data.
 
 ## Test results
 
@@ -132,7 +142,7 @@ Each dataset generated with these parameters contains 1_315_200_000 rows in each
 
 ### Results: Simple test
 
-The identifier list for both runs (v4 and v8) contained 14_400_000 items, grepped via the dates specified in the `test.day` setting.
+The identifier list for both runs (v4 and v8) contained 14_400_000 items, loaded by using the 24 dates specified in the `test.day` setting.
 
 Both for v4 and v8, two test runs were performed, and the second one was accounted (after caches were filled).
 
@@ -140,10 +150,21 @@ Both for v4 and v8, two test runs were performed, and the second one was account
 | `v4` | 5_000_000 | `0` | `29` | `11.06` | `39.12` | `572.64` | `37.22` | `50.10` | `76.09` |
 | `v8` | 5_000_000 | `0` | `18` | `6.48` | `20.33` | `649.71` | `19.33` | `24.83` | `35.42` |
 
-## Building
+### Results: Complex test
 
-Maven, Java SDK 21
+The day list for both runs (v4 and v8) contained 24 items, configured via the dates specified in the `test.day` setting.
 
-```bash
-mvn clean package -DskipTests=true
-```
+Both for v4 and v8, two test runs were performed, and the second one was accounted (after caches were filled).
+
+| **Test type** | **Samples** | **Errors** | **Retries** | **min** | **avg** | **max** | **p50** | **p90** | **p99** |
+| `v4` | 5_000_000 | `0` | `3` | `9.77` | `58.08` | `1256.96` | `55.05` | `86.18` | `140.38` |
+| `v8` | 5_000_000 | `0` | `10` | `9.56` | `22.59` | `1317.12` | `21.87` | `27.16` | `35.75` |
+
+### Summary
+
+On this cluster and dataset (1_315_200_000 rows per table in `main` and `sub`, `gen.scale` 600, 100 concurrent `TEST` workers, 50_000 iterations each, second run after warm caches), structured v8-style keys from `UuidKeyGen` consistently beat plain UUIDv4 on the reported latency metrics, which matches the goal of better key locality for range-partitioned tables and indexes.
+
+- **Simple test** — v8 roughly halved central tendency versus v4: average 39.12 ms → 20.33 ms, median 37.22 ms → 19.33 ms, and p99 76.09 ms → 35.42 ms. Retries dropped (29 → 18); min improved (11.06 ms → 6.48 ms).
+- **Complex test** — Gains were larger on averages and tails: average 58.08 ms → 22.59 ms, median 55.05 ms → 21.87 ms, and p99 140.38 ms → 35.75 ms. Min was similar (~9.6 ms); max stayed in the same ballpark for both schemes. Retries were low for both (3 vs 10); treat retry counts as a weak signal here compared to the latency shift.
+
+**Caveats:** The numbers are environment-specific (node count, disk, deliberately limited RAM per host, YDB build). They illustrate relative behavior of v4 versus v8 key layouts under the same load shape, not a universal guarantee for every deployment.
