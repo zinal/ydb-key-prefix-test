@@ -498,7 +498,8 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 				params := ydb.ParamsBuilder().Param("$ids").BeginList().AddItems(items...).EndList().Build()
 
 				q := `DECLARE $ids AS List<Struct<id: Uuid>>;
-SELECT m.id AS id
+SELECT m.id AS id, m.collection_id AS collection_id,
+       m.tv AS tv, m.ballast1 AS ballast1
 FROM ` + "`" + mainDemoTable + "`" + ` AS m
 INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 
@@ -517,8 +518,8 @@ INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 						if err != nil {
 							return err
 						}
-						var id uuid.UUID
-						if err := row.ScanNamed(query.Named("id", &id)); err != nil {
+						var id string
+						if err := row.ScanNamed(query.Named("ballast1", &id)); err != nil {
 							return err
 						}
 						rows++
