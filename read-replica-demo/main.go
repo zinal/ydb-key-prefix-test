@@ -59,8 +59,8 @@ func main() {
 		}
 	case "test-reads":
 		keyFile := fs.String("keys", "keys_sorted.txt", "Sorted key file from dump-keys")
-		keyset := fs.Int("KEYSET", 10000, "Number of unique random keys to sample from the file")
-		batch := fs.Int("BATCH", 32, "Max keys per SELECT batch")
+		keyset := fs.Int("keyset", 10000, "Number of unique random keys to sample from the file")
+		batch := fs.Int("batch", 32, "Max keys per SELECT batch")
 		rounds := fs.Int("rounds", 100, "How many batches to run (each picks BATCH keys at random from the sampled keyset)")
 		seed := fs.Int64("seed", time.Now().UnixNano(), "RNG seed for sampling and batch composition")
 		_ = fs.Parse(os.Args[2:])
@@ -68,7 +68,7 @@ func main() {
 			log.Fatal("-ydb is required")
 		}
 		if *keyset <= 0 || *batch <= 0 || *rounds <= 0 {
-			log.Fatal("-KEYSET, -BATCH, and -rounds must be positive")
+			log.Fatal("-keyset, -batch, and -rounds must be positive")
 		}
 		if err := runTestReads(context.Background(), *ydbDSN, *tablePath, *keyFile, *keyset, *batch, *rounds, *seed); err != nil {
 			log.Fatal(err)
@@ -82,7 +82,7 @@ func main() {
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage:
   %s dump-keys  -ydb <dsn> [-table path] [-out file] [-page-size N]
-  %s test-reads -ydb <dsn> [-table path] [-keys file] [-KEYSET N] [-BATCH N] [-rounds N] [-seed N]
+  %s test-reads -ydb <dsn> [-table path] [-keys file] [-keyset N] [-batch N] [-rounds N] [-seed N]
 
 Environment credentials follow ydb-go-sdk-auth-environ (e.g. YDB_ANONYMOUS_CREDENTIALS=1).
 
