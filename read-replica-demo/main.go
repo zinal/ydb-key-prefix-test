@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,6 +36,29 @@ import (
 
 // YQL table name relative to the database (see also fullTablePath for DescribeTable).
 const mainDemoTable = "key_prefix_demo/main"
+
+const progressLogInterval = 10 * time.Second
+
+// startProgressLogger logs logFn every progressLogInterval until stop is called.
+func startProgressLogger(logFn func()) (stop func()) {
+	done := make(chan struct{})
+	var once sync.Once
+	go func() {
+		t := time.NewTicker(progressLogInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				logFn()
+			case <-done:
+				return
+			}
+		}
+	}()
+	return func() {
+		once.Do(func() { close(done) })
+	}
+}
 
 func main() {
 	log.SetFlags(0)
@@ -147,7 +171,12 @@ func runDumpKeys(ctx context.Context, dsn, outPath string, pageSize uint64) erro
 	row := make([]byte, 16)
 
 	var last uuid.UUID
-	var n int64
+	var written atomic.Int64
+	stopProgress := startProgressLogger(func() {
+		log.Printf("dump-keys: progress %d keys written", written.Load())
+	})
+	defer stopProgress()
+
 	readTx := table.TxControl(table.BeginTx(table.WithSnapshotReadOnly()), table.CommitTx())
 
 	for page := 0; ; page++ {
@@ -186,7 +215,7 @@ LIMIT $limit;`
 				}
 				last = id
 				rowsThisPage++
-				n++
+				written.Add(1)
 			}
 			return res.Err()
 		}, table.WithIdempotent())
@@ -201,7 +230,7 @@ LIMIT $limit;`
 		}
 	}
 
-	log.Printf("dump-keys: wrote %d keys to %s", n, outPath)
+	log.Printf("dump-keys: wrote %d keys to %s", written.Load(), outPath)
 	return nil
 }
 
@@ -316,7 +345,16 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 	buf := make([]byte, 16)
 	var pos int64
 
+	var keysProg, attemptsProg atomic.Int64
+	want64 := int64(want)
+	stopSampleProgress := startProgressLogger(func() {
+		log.Printf("test-reads: key sample progress %d / %d unique keys (attempts %d)",
+			keysProg.Load(), want64, attemptsProg.Load())
+	})
+	defer stopSampleProgress()
+
 	for attempt := 0; len(out) < want && attempt < maxAttempts; attempt++ {
+		attemptsProg.Store(int64(attempt + 1))
 		skip := rng.Int63n(nRecords)
 		pos = nextUUIDRecordOffset(pos, skip, size)
 		if _, err := f.Seek(pos, io.SeekStart); err != nil {
@@ -335,6 +373,7 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
+		keysProg.Store(int64(len(out)))
 	}
 
 	if len(out) == 0 {
@@ -382,8 +421,14 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 	log.Printf("test-reads: key file %d bytes, keyset %d unique keys, %d partitions",
 		fileSize, len(keyset), len(pr.nodeIDs))
 
-	var okBatches, rowCount int64
-	var mu sync.Mutex
+	var okBatches, rowCount atomic.Int64
+	var roundDone atomic.Int64
+	rounds64 := int64(rounds)
+	stopExecProgress := startProgressLogger(func() {
+		log.Printf("test-reads: execution progress rounds %d / %d, partition-queries %d, rows %d",
+			roundDone.Load(), rounds64, okBatches.Load(), rowCount.Load())
+	})
+	defer stopExecProgress()
 
 	for r := 0; r < rounds; r++ {
 		if len(keyset) == 0 {
@@ -455,10 +500,8 @@ INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 						}
 						rows++
 					}
-					mu.Lock()
-					okBatches++
-					rowCount += int64(rows)
-					mu.Unlock()
+					okBatches.Add(1)
+					rowCount.Add(int64(rows))
 					return nil
 				}, query.WithIdempotent(), query.WithTxSettings(query.TxSettings(query.WithStaleReadOnly())))
 				if err != nil {
@@ -471,8 +514,10 @@ INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 		for e := range errCh {
 			return e
 		}
+		roundDone.Store(int64(r + 1))
 	}
 
-	log.Printf("test-reads: completed %d outer rounds, %d partition-queries, %d rows returned", rounds, okBatches, rowCount)
+	log.Printf("test-reads: completed %d outer rounds, %d partition-queries, %d rows returned",
+		rounds, okBatches.Load(), rowCount.Load())
 	return nil
 }
