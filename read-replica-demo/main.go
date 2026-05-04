@@ -486,8 +486,6 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 			innerWg.Add(1)
 			go func(pi int, ks []uuid.UUID) {
 				defer innerWg.Done()
-				hintKey := ks[rng.Intn(len(ks))]
-				partCtx := pr.withPreferredNode(ctx, hintKey)
 
 				items := make([]types.Value, len(ks))
 				for i, id := range ks {
@@ -503,7 +501,7 @@ SELECT m.id AS id, m.collection_id AS collection_id,
 FROM ` + "`" + mainDemoTable + "`" + ` AS m
 INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 
-				err := db.Query().DoTx(partCtx, func(ctx context.Context, tx query.TxActor) error {
+				err := db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
 					rs, err := tx.QueryResultSet(ctx, q, query.WithParameters(params))
 					if err != nil {
 						return err
