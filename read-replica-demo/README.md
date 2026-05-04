@@ -11,7 +11,7 @@ The target table path is fixed in code as `` `key_prefix_demo/main` `` (YQL). **
 ### `dump-keys`
 
 1. Opens a YDB connection and runs a **paged key-order scan** over `` `key_prefix_demo/main` ``.
-2. Each page is a **Query Service** transaction (`db.Query().DoTx`) with **snapshot read-only** settings, matching the style of the [native query examples](https://github.com/ydb-platform/ydb-go-sdk/tree/master/examples/basic/native/query).
+2. Each page runs under **`db.Query().Do`** with **`query.WithTxControl(query.SnapshotReadOnlyTxControl())`** on the execute call (not `DoTx`), so snapshot read-only is carried only in **ExecuteDataQuery** `tx_control`, matching the [native query examples](https://github.com/ydb-platform/ydb-go-sdk/tree/master/examples/basic/native/query).
 3. YQL uses `WHERE id > $last ORDER BY id LIMIT $limit` so ordering matches **YDB UUID cell order** (memcmp on the 16-byte representation), not canonical UUID string order.
 4. Each row’s `id` is appended to the output file as **exactly 16 bytes** (RFC / `google/uuid` layout), with **no delimiters** between records.
 5. Progress is logged about **every 10 seconds** (keys written so far).
@@ -20,7 +20,7 @@ The target table path is fixed in code as `` `key_prefix_demo/main` `` (YQL). **
 
 1. **Describes** the same table via the **Table** API (`DescribeTable` with shard key bounds and partition stats) to build a **partition router**: exclusive upper bound per shard and leader node id for preferred-node hints.
 2. **Samples** a keyset from the binary key file **without loading the whole file**: one forward pass with a logical cursor; each step skips a random number of whole records (mean roughly `nRecords / keyset`, capped), reads one UUID, advances; **EOF wraps to the start**. Deduplicates until `keyset` unique keys or an attempt limit. Progress is logged about every 10 seconds.
-3. For each **outer round** (count = `-rounds`), builds a batch of up to `-batch` keys drawn at random from the keyset (sorted in YDB UUID order for the batch), splits keys by partition, and runs **one Query Service transaction per partition** in parallel (`StaleReadOnly`), with **`ydb.WithPreferredNodeID`** from a random key in that partition’s batch.
+3. For each **outer round** (count = `-rounds`), builds a batch of up to `-batch` keys drawn at random from the keyset (sorted in YDB UUID order for the batch), splits keys by partition, and runs **one `db.Query().Do` per partition** in parallel. Each execute uses **`query.WithTxControl(query.StaleReadOnlyTxControl())`** (stale read-only in `tx_control`, not `DoTx`), so the server does not open a multi-step transaction for that mode.
 4. Execution progress (rounds completed, partition-queries, rows returned) is logged about **every 10 seconds**.
 
 ### Read replicas

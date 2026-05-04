@@ -188,12 +188,15 @@ LIMIT $limit;`
 
 	for page := 0; ; page++ {
 		var rowsThisPage int
-		err = db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
+		err = db.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
 			params := ydb.ParamsBuilder().
 				Param("$limit").Uint64(pageSize).
 				Param("$last").Uuid(last).
 				Build()
-			rs, err := tx.QueryResultSet(ctx, dumpPageQuery, query.WithParameters(params))
+			rs, err := s.QueryResultSet(ctx, dumpPageQuery,
+				query.WithParameters(params),
+				query.WithTxControl(query.SnapshotReadOnlyTxControl()),
+			)
 			if err != nil {
 				return err
 			}
@@ -219,7 +222,7 @@ LIMIT $limit;`
 				written.Add(1)
 			}
 			return nil
-		}, query.WithIdempotent(), query.WithTxSettings(query.TxSettings(query.WithSnapshotReadOnly())))
+		}, query.WithIdempotent())
 		if err != nil {
 			return fmt.Errorf("page %d: %w", page, err)
 		}
@@ -517,8 +520,11 @@ SELECT m.id AS id, m.collection_id AS collection_id,
 FROM ` + "`" + mainDemoTable + "`" + ` AS m
 INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 
-				err := db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
-					rs, err := tx.QueryResultSet(ctx, q, query.WithParameters(params))
+				err := db.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
+					rs, err := s.QueryResultSet(ctx, q,
+						query.WithParameters(params),
+						query.WithTxControl(query.StaleReadOnlyTxControl()),
+					)
 					if err != nil {
 						return err
 					}
@@ -541,7 +547,7 @@ INNER JOIN AS_TABLE($ids) AS k ON m.id = k.id;`
 					okBatches.Add(1)
 					rowCount.Add(int64(rows))
 					return nil
-				}, query.WithIdempotent(), query.WithTxSettings(query.TxSettings(query.WithStaleReadOnly())))
+				}, query.WithIdempotent())
 				if err != nil {
 					errCh <- fmt.Errorf("partition %d (%d keys): %w", pi, len(ks), err)
 				}
