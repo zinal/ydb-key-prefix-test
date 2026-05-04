@@ -310,11 +310,11 @@ func nextUUIDRecordOffset(pos int64, skipRecords int64, size int64) int64 {
 }
 
 // sampleUniqueKeysFromFile reads fixed 16-byte UUID records (RFC byte order). It walks the file
-// sequentially: each sample skips a random number of records, reads one UUID, advances; at EOF
-// position wraps to the start. Does not load the whole file into memory.
+// sequentially: each sample skips a random number of records (mean about nRecords/want, capped),
+// reads one UUID, advances; at EOF position wraps to the start. Does not load the whole file into memory.
 func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUID, int64, error) {
 	if want <= 0 {
-		return nil, 0, errors.New("want must be positive")
+		return nil, 0, errors.New("want must be positive (want==0 is invalid)")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -328,6 +328,9 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 		return nil, size, fmt.Errorf("key file size %d is not a multiple of 16 bytes", size)
 	}
 	nRecords := size / 16
+	if nRecords == 0 {
+		return nil, size, errors.New("key file has no 16-byte UUID records (nRecords==0)")
+	}
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -335,10 +338,18 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 	}
 	defer func() { _ = f.Close() }()
 
+	want64 := int64(want)
+	if want64 > nRecords {
+		log.Printf("test-reads: warning: want %d exceeds file record count %d; cannot collect that many distinct keys", want, nRecords)
+	}
+
 	const maxAttemptsMul = 64
 	maxAttempts := want * maxAttemptsMul
 	if maxAttempts < 8192 {
 		maxAttempts = 8192
+	}
+	if want64 > nRecords {
+		maxAttempts *= 4
 	}
 
 	out := make([]uuid.UUID, 0, want)
@@ -347,16 +358,27 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 	var pos int64
 
 	var keysProg, attemptsProg atomic.Int64
-	want64 := int64(want)
 	stopSampleProgress := startProgressLogger(func() {
 		log.Printf("test-reads: key sample progress %d / %d unique keys (attempts %d)",
 			keysProg.Load(), want64, attemptsProg.Load())
 	})
 	defer stopSampleProgress()
 
+	// Target mean skip ≈ nRecords/want: uniform on [0, min(2*avgSkip, nRecords-1)] when avgSkip>0; else skip=0.
+	avgSkip := nRecords / want64
+
 	for attempt := 0; len(out) < want && attempt < maxAttempts; attempt++ {
 		attemptsProg.Store(int64(attempt + 1))
-		skip := rng.Int63n(nRecords)
+		var skip int64
+		if avgSkip == 0 {
+			skip = 0
+		} else {
+			span := 2 * avgSkip
+			if span > nRecords-1 {
+				span = nRecords - 1
+			}
+			skip = rng.Int63n(span + 1)
+		}
 		pos = nextUUIDRecordOffset(pos, skip, size)
 		if _, err := f.Seek(pos, io.SeekStart); err != nil {
 			return nil, size, err
