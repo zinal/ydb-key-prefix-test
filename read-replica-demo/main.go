@@ -2,7 +2,7 @@
 //
 // Modes:
 //
-//	dump-keys  — paged SELECT over primary key, writes UUIDs as fixed 16-byte records (binary)
+//	dump-keys  — paged SELECT via query service over primary key, writes UUIDs as 16-byte records (binary)
 //	test-reads — samples KEYSET keys via one sequential pass (random skip/wrap), batched point reads
 //	             split by table partitions with preferred node hints, concurrently
 package main
@@ -30,7 +30,6 @@ import (
 	"github.com/ydb-platform/ydb-go-sdk/v3/query"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/options"
-	"github.com/ydb-platform/ydb-go-sdk/v3/table/result/named"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
 )
 
@@ -177,36 +176,38 @@ func runDumpKeys(ctx context.Context, dsn, outPath string, pageSize uint64) erro
 	})
 	defer stopProgress()
 
-	readTx := table.TxControl(table.BeginTx(table.WithSnapshotReadOnly()), table.CommitTx())
-
-	for page := 0; ; page++ {
-		var rowsThisPage int
-		err = db.Table().Do(ctx, func(ctx context.Context, s table.Session) error {
-			// ORDER BY id uses MiniKQL CompareValues<Uuid> (memcmp on the same 16 bytes as
-			// datashard cells), not canonical UUID text order. Do not use CAST(id AS String):
-			// that sorts the human-readable form (mkql_type_ops ValueToString), which differs.
-			q := `DECLARE $limit AS Uint64;
+	// ORDER BY id uses MiniKQL CompareValues<Uuid> (memcmp on the same 16 bytes as
+	// datashard cells), not canonical UUID text order. Do not use CAST(id AS String):
+	// that sorts the human-readable form (mkql_type_ops ValueToString), which differs.
+	dumpPageQuery := `DECLARE $limit AS Uint64;
 DECLARE $last AS Uuid;
 SELECT id FROM ` + "`" + mainDemoTable + "`" + `
 WHERE id > $last
 ORDER BY id
 LIMIT $limit;`
 
-			_, res, err := s.Execute(ctx, readTx, q, table.NewQueryParameters(
-				table.ValueParam("$limit", types.Uint64Value(pageSize)),
-				table.ValueParam("$last", types.UuidValue(last)),
-			))
+	for page := 0; ; page++ {
+		var rowsThisPage int
+		err = db.Query().DoTx(ctx, func(ctx context.Context, tx query.TxActor) error {
+			params := ydb.ParamsBuilder().
+				Param("$limit").Uint64(pageSize).
+				Param("$last").Uuid(last).
+				Build()
+			rs, err := tx.QueryResultSet(ctx, dumpPageQuery, query.WithParameters(params))
 			if err != nil {
 				return err
 			}
-			defer func() { _ = res.Close() }()
-
-			if !res.NextResultSet(ctx) {
-				return errors.New("no result set")
-			}
-			for res.NextRow() {
+			defer func() { _ = rs.Close(ctx) }()
+			for {
+				resRow, err := rs.NextRow(ctx)
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return err
+				}
 				var id uuid.UUID
-				if err := res.ScanNamed(named.Required("id", &id)); err != nil {
+				if err := resRow.ScanNamed(query.Named("id", &id)); err != nil {
 					return err
 				}
 				copy(row, id[:])
@@ -217,8 +218,8 @@ LIMIT $limit;`
 				rowsThisPage++
 				written.Add(1)
 			}
-			return res.Err()
-		}, table.WithIdempotent())
+			return nil
+		}, query.WithIdempotent(), query.WithTxSettings(query.TxSettings(query.WithSnapshotReadOnly())))
 		if err != nil {
 			return fmt.Errorf("page %d: %w", page, err)
 		}
