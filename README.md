@@ -147,6 +147,7 @@ The identifier list for both runs (v4 and v8) contained 14_400_000 items, loaded
 Both for v4 and v8, two test runs were performed, and the second one was accounted (after caches were filled).
 
 | **Test type** | **Samples** | **Errors** | **Retries** | **min** | **avg** | **max** | **p50** | **p90** | **p99** |
+| - | - | - | - | - | - | - | - | - | - |
 | `v4` | 5_000_000 | `0` | `29` | `11.06` | `39.12` | `572.64` | `37.22` | `50.10` | `76.09` |
 | `v8` | 5_000_000 | `0` | `18` | `6.48` | `20.33` | `649.71` | `19.33` | `24.83` | `35.42` |
 
@@ -157,6 +158,7 @@ The day list for both runs (v4 and v8) contained 24 items, configured via the da
 Both for v4 and v8, two test runs were performed, and the second one was accounted (after caches were filled).
 
 | **Test type** | **Samples** | **Errors** | **Retries** | **min** | **avg** | **max** | **p50** | **p90** | **p99** |
+| - | - | - | - | - | - | - | - | - | - |
 | `v4` | 5_000_000 | `0` | `3` | `9.77` | `58.08` | `1256.96` | `55.05` | `86.18` | `140.38` |
 | `v8` | 5_000_000 | `0` | `10` | `9.56` | `22.59` | `1317.12` | `21.87` | `27.16` | `35.75` |
 
