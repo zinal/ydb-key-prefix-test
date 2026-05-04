@@ -236,7 +236,7 @@ LIMIT $limit;`
 }
 
 type partitionRouter struct {
-	upperBounds []uuid.UUID // exclusive right boundary per shard; len == #partitions
+	upperBounds []uuid.UUID // exclusive right boundary per shard (omit open-ended last shard); len == #partitions or #partitions-1
 	nodeIDs     []uint32    // LeaderNodeID per partition (for preferred-node hint)
 }
 
@@ -250,7 +250,10 @@ func buildPartitionRouter(desc options.Description) (*partitionRouter, error) {
 	}
 	for i, kr := range desc.KeyRanges {
 		if kr.To == nil {
-			return nil, fmt.Errorf("key range %d: upper bound is nil (unexpected)", i)
+			if i != len(desc.KeyRanges)-1 {
+				return nil, fmt.Errorf("key range %d: upper bound is nil (only the last range may be unbounded)", i)
+			}
+			continue
 		}
 		parts, err := types.TupleItems(kr.To)
 		if err != nil || len(parts) == 0 {
@@ -263,9 +266,22 @@ func buildPartitionRouter(desc options.Description) (*partitionRouter, error) {
 		}
 		pr.upperBounds = append(pr.upperBounds, upper)
 	}
-	if desc.Stats == nil || len(desc.Stats.PartitionStats) != len(pr.upperBounds) {
-		return nil, fmt.Errorf("partition stats count %d != key ranges %d (use WithPartitionStats)",
-			len(desc.Stats.PartitionStats), len(pr.upperBounds))
+	if desc.Stats == nil {
+		return nil, errors.New("DescribeTable returned no stats (use WithPartitionStats)")
+	}
+	nParts := len(desc.Stats.PartitionStats)
+	nRanges := len(desc.KeyRanges)
+	if nParts != nRanges {
+		return nil, fmt.Errorf("partition stats count %d != key ranges %d (use WithPartitionStats)", nParts, nRanges)
+	}
+	lastOpen := desc.KeyRanges[nRanges-1].To == nil
+	expectUppers := nParts
+	if lastOpen {
+		expectUppers--
+	}
+	if len(pr.upperBounds) != expectUppers {
+		return nil, fmt.Errorf("parsed %d upper bounds, expected %d (last key range open=%v, partitions=%d)",
+			len(pr.upperBounds), expectUppers, lastOpen, nParts)
 	}
 	for _, ps := range desc.Stats.PartitionStats {
 		pr.nodeIDs = append(pr.nodeIDs, ps.LeaderNodeID)
