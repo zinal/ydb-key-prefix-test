@@ -2,8 +2,8 @@
 //
 // Modes:
 //
-//	dump-keys  — paged SELECT over primary key, writes sorted UUIDs to a file
-//	test-reads — samples KEYSET keys from a key file (random seeks; no full load), runs batched point reads
+//	dump-keys  — paged SELECT over primary key, writes UUIDs as fixed 16-byte records (binary)
+//	test-reads — samples KEYSET keys via one sequential pass (random skip/wrap), batched point reads
 //	             split by table partitions with preferred node hints, concurrently
 package main
 
@@ -50,7 +50,7 @@ func main() {
 
 	switch mode {
 	case "dump-keys":
-		outPath := fs.String("out", "keys_sorted.txt", "Output file: one canonical UUID string per line, in YDB primary-key (Uuid cell) order")
+		outPath := fs.String("out", "keys.bin", "Output file: UUIDs as consecutive 16-byte records (RFC layout), YDB primary-key order")
 		pageSize := fs.Uint64("page-size", 1000, "Rows per page")
 		_ = fs.Parse(os.Args[2:])
 		if *ydbDSN == "" {
@@ -60,7 +60,7 @@ func main() {
 			log.Fatal(err)
 		}
 	case "test-reads":
-		keyFile := fs.String("keys", "keys_sorted.txt", "Key file from dump-keys (YDB Uuid cell order, one UUID per line)")
+		keyFile := fs.String("keys", "keys.bin", "Key file from dump-keys (16-byte UUID records, no delimiters)")
 		keyset := fs.Int("keyset", 10000, "Number of unique random keys to sample from the file")
 		batch := fs.Int("batch", 32, "Max keys per SELECT batch")
 		rounds := fs.Int("rounds", 100, "How many batches to run (each picks BATCH keys at random from the sampled keyset)")
@@ -144,6 +144,7 @@ func runDumpKeys(ctx context.Context, dsn, outPath string, pageSize uint64) erro
 	}
 	defer func() { _ = f.Close() }()
 	w := bufio.NewWriter(f)
+	row := make([]byte, 16)
 
 	var last uuid.UUID
 	var n int64
@@ -179,7 +180,8 @@ LIMIT $limit;`
 				if err := res.ScanNamed(named.Required("id", &id)); err != nil {
 					return err
 				}
-				if _, err := fmt.Fprintln(w, id.String()); err != nil {
+				copy(row, id[:])
+				if _, err := w.Write(row); err != nil {
 					return err
 				}
 				last = id
@@ -267,46 +269,19 @@ func (pr *partitionRouter) withPreferredNode(ctx context.Context, k uuid.UUID) c
 	return ydb.WithPreferredNodeID(ctx, pr.nodeIDs[idx])
 }
 
-// errSkipUUIDSample means the random seek did not yield a usable line; try again.
-var errSkipUUIDSample = errors.New("skip uuid sample")
-
-// readUUIDLineAtRandomOffset seeks to a random byte in [0, size), skips the partial line when not
-// at offset 0, then returns the next complete line as a UUID. Suitable for huge files without
-// scanning them end-to-end (lines should be similar length for roughly uniform line sampling).
-func readUUIDLineAtRandomOffset(f *os.File, size int64, rng *rand.Rand) (uuid.UUID, error) {
+// nextUUIDRecordOffset returns pos advanced by skipRecords 16-byte records, wrapping at EOF.
+func nextUUIDRecordOffset(pos int64, skipRecords int64, size int64) int64 {
 	if size <= 0 {
-		return uuid.UUID{}, errSkipUUIDSample
+		return 0
 	}
-	off := rng.Int63n(size)
-	if _, err := f.Seek(off, io.SeekStart); err != nil {
-		return uuid.UUID{}, err
-	}
-	r := bufio.NewReader(f)
-	if off > 0 {
-		if _, err := r.ReadBytes('\n'); err != nil {
-			if errors.Is(err, io.EOF) {
-				return uuid.UUID{}, errSkipUUIDSample
-			}
-			return uuid.UUID{}, err
-		}
-	}
-	line, err := r.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return uuid.UUID{}, err
-	}
-	line = strings.TrimSpace(line)
-	if line == "" {
-		return uuid.UUID{}, errSkipUUIDSample
-	}
-	id, err := uuid.Parse(line)
-	if err != nil {
-		return uuid.UUID{}, errSkipUUIDSample
-	}
-	return id, nil
+	p := pos + skipRecords*16
+	p %= size
+	return p
 }
 
-// sampleUniqueKeysFromFile picks want distinct keys by random byte offsets into the file (see
-// readUUIDLineAtRandomOffset). It does not read or buffer the whole file.
+// sampleUniqueKeysFromFile reads fixed 16-byte UUID records (RFC byte order). It walks the file
+// sequentially: each sample skips a random number of records, reads one UUID, advances; at EOF
+// position wraps to the start. Does not load the whole file into memory.
 func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUID, int64, error) {
 	if want <= 0 {
 		return nil, 0, errors.New("want must be positive")
@@ -319,6 +294,10 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 	if size == 0 {
 		return nil, 0, errors.New("key file is empty")
 	}
+	if size%16 != 0 {
+		return nil, size, fmt.Errorf("key file size %d is not a multiple of 16 bytes", size)
+	}
+	nRecords := size / 16
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -334,15 +313,23 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 
 	out := make([]uuid.UUID, 0, want)
 	seen := make(map[uuid.UUID]struct{}, want)
+	buf := make([]byte, 16)
+	var pos int64
 
 	for attempt := 0; len(out) < want && attempt < maxAttempts; attempt++ {
-		id, err := readUUIDLineAtRandomOffset(f, size, rng)
-		if errors.Is(err, errSkipUUIDSample) {
-			continue
-		}
-		if err != nil {
+		skip := rng.Int63n(nRecords)
+		pos = nextUUIDRecordOffset(pos, skip, size)
+		if _, err := f.Seek(pos, io.SeekStart); err != nil {
 			return nil, size, err
 		}
+		if _, err := io.ReadFull(f, buf); err != nil {
+			return nil, size, err
+		}
+		id, err := uuid.FromBytes(buf)
+		if err != nil {
+			return nil, size, fmt.Errorf("invalid 16-byte UUID at offset %d: %w", pos, err)
+		}
+		pos = nextUUIDRecordOffset(pos, 1, size)
 		if _, dup := seen[id]; dup {
 			continue
 		}
@@ -351,10 +338,10 @@ func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUI
 	}
 
 	if len(out) == 0 {
-		return nil, size, errors.New("no valid UUID lines sampled (empty or invalid file content?)")
+		return nil, size, errors.New("no keys sampled from file")
 	}
 	if len(out) < want {
-		log.Printf("test-reads: warning: only sampled %d unique keys (wanted %d); small file, short lines, or many duplicates", len(out), want)
+		log.Printf("test-reads: warning: only sampled %d unique keys (wanted %d); small keyspace or many duplicates", len(out), want)
 	}
 	return out, size, nil
 }
