@@ -3,7 +3,7 @@
 // Modes:
 //
 //	dump-keys  — paged SELECT over primary key, writes sorted UUIDs to a file
-//	test-reads — loads a keyset file, samples KEYSET keys, runs batched point reads
+//	test-reads — samples KEYSET keys from a key file (random seeks; no full load), runs batched point reads
 //	             split by table partitions with preferred node hints, concurrently
 package main
 
@@ -48,7 +48,7 @@ func main() {
 
 	switch mode {
 	case "dump-keys":
-		outPath := fs.String("out", "keys_sorted.txt", "Output file: one UUID string per line, sorted")
+		outPath := fs.String("out", "keys_sorted.txt", "Output file: one canonical UUID string per line, in YDB primary-key (Uuid cell) order")
 		pageSize := fs.Uint64("page-size", 1000, "Rows per page")
 		_ = fs.Parse(os.Args[2:])
 		if *ydbDSN == "" {
@@ -58,7 +58,7 @@ func main() {
 			log.Fatal(err)
 		}
 	case "test-reads":
-		keyFile := fs.String("keys", "keys_sorted.txt", "Sorted key file from dump-keys")
+		keyFile := fs.String("keys", "keys_sorted.txt", "Key file from dump-keys (YDB Uuid cell order, one UUID per line)")
 		keyset := fs.Int("keyset", 10000, "Number of unique random keys to sample from the file")
 		batch := fs.Int("batch", 32, "Max keys per SELECT batch")
 		rounds := fs.Int("rounds", 100, "How many batches to run (each picks BATCH keys at random from the sampled keyset)")
@@ -85,16 +85,48 @@ func usage() {
   %s test-reads -ydb <dsn> [-table path] [-keys file] [-keyset N] [-batch N] [-rounds N] [-seed N]
 
 Environment credentials follow ydb-go-sdk-auth-environ (e.g. YDB_ANONYMOUS_CREDENTIALS=1).
+If both YDB_USER and YDB_PASSWORD are set, static credentials are used instead.
+
+For custom TLS certificates, set YDB_SSL_ROOT_CERTIFICATES_FILE.
 
 `, os.Args[0], os.Args[0])
 }
 
 func openDB(ctx context.Context, dsn string) (*ydb.Driver, error) {
+	user := os.Getenv("YDB_USER")
+	password := os.Getenv("YDB_PASSWORD")
+	if user != "" || password != "" {
+		if user == "" || password == "" {
+			return nil, errors.New("static auth requires both YDB_USER and YDB_PASSWORD (or unset both to use ydb-go-sdk-auth-environ)")
+		}
+		return ydb.Open(ctx, dsn, ydb.WithStaticCredentials(user, password))
+	}
 	return ydb.Open(ctx, dsn, environ.WithEnvironCredentials())
 }
 
 func fullTablePath(db *ydb.Driver, relative string) string {
 	return path.Join(db.Name(), strings.TrimPrefix(relative, "/"))
+}
+
+// uuidYDBCellBytes returns the 16-byte representation YDB uses for UUID keys and YQL Uuid
+// comparisons: lexicographic order on this slice matches table storage (memcmp on cells),
+// YQL ORDER BY id, and NUuid::ParseUuidToArray in ydb-platform/ydb
+// (see ydb/core/scheme/scheme_tablecell.h CompareTypedCells Uuid,
+// yql/essentials/public/udf/udf_type_ops.h CompareValues<EDataSlot::Uuid>).
+// It matches github.com/ydb-platform/ydb-go-sdk/v3/internal/value.uuidDirectBytesToLe.
+func uuidYDBCellBytes(id uuid.UUID) [16]byte {
+	b := id
+	var le [16]byte
+	le[0], le[1], le[2], le[3] = b[3], b[2], b[1], b[0]
+	le[4], le[5], le[6], le[7] = b[5], b[4], b[7], b[6]
+	copy(le[8:], b[8:])
+	return le
+}
+
+func compareYDBUUIDOrder(a, b uuid.UUID) int {
+	ka := uuidYDBCellBytes(a)
+	kb := uuidYDBCellBytes(b)
+	return slices.Compare(ka[:], kb[:])
 }
 
 func runDumpKeys(ctx context.Context, dsn, tableRel, outPath string, pageSize uint64) error {
@@ -119,6 +151,9 @@ func runDumpKeys(ctx context.Context, dsn, tableRel, outPath string, pageSize ui
 	for page := 0; ; page++ {
 		var rowsThisPage int
 		err = db.Table().Do(ctx, func(ctx context.Context, s table.Session) error {
+			// ORDER BY id uses MiniKQL CompareValues<Uuid> (memcmp on the same 16 bytes as
+			// datashard cells), not canonical UUID text order. Do not use CAST(id AS String):
+			// that sorts the human-readable form (mkql_type_ops ValueToString), which differs.
 			q := fmt.Sprintf(`
 				DECLARE $limit AS Uint64;
 				DECLARE $last AS Uuid;
@@ -205,20 +240,16 @@ func buildPartitionRouter(desc options.Description) (*partitionRouter, error) {
 		pr.nodeIDs = append(pr.nodeIDs, ps.LeaderNodeID)
 	}
 	for i := 1; i < len(pr.upperBounds); i++ {
-		if bytesCompareUUID(pr.upperBounds[i-1], pr.upperBounds[i]) >= 0 {
+		if compareYDBUUIDOrder(pr.upperBounds[i-1], pr.upperBounds[i]) >= 0 {
 			return nil, fmt.Errorf("shard upper bounds not strictly increasing at %d", i)
 		}
 	}
 	return pr, nil
 }
 
-func bytesCompareUUID(a, b uuid.UUID) int {
-	return slices.Compare(a[:], b[:])
-}
-
 func (pr *partitionRouter) partitionIndexForKey(k uuid.UUID) int {
 	idx, found := slices.BinarySearchFunc(pr.upperBounds, k, func(upper uuid.UUID, key uuid.UUID) int {
-		return bytesCompareUUID(key, upper)
+		return compareYDBUUIDOrder(key, upper)
 	})
 	if found {
 		idx++
@@ -237,48 +268,96 @@ func (pr *partitionRouter) withPreferredNode(ctx context.Context, k uuid.UUID) c
 	return ydb.WithPreferredNodeID(ctx, pr.nodeIDs[idx])
 }
 
-func loadSortedKeyFile(path string) ([]uuid.UUID, error) {
+// errSkipUUIDSample means the random seek did not yield a usable line; try again.
+var errSkipUUIDSample = errors.New("skip uuid sample")
+
+// readUUIDLineAtRandomOffset seeks to a random byte in [0, size), skips the partial line when not
+// at offset 0, then returns the next complete line as a UUID. Suitable for huge files without
+// scanning them end-to-end (lines should be similar length for roughly uniform line sampling).
+func readUUIDLineAtRandomOffset(f *os.File, size int64, rng *rand.Rand) (uuid.UUID, error) {
+	if size <= 0 {
+		return uuid.UUID{}, errSkipUUIDSample
+	}
+	off := rng.Int63n(size)
+	if _, err := f.Seek(off, io.SeekStart); err != nil {
+		return uuid.UUID{}, err
+	}
+	r := bufio.NewReader(f)
+	if off > 0 {
+		if _, err := r.ReadBytes('\n'); err != nil {
+			if errors.Is(err, io.EOF) {
+				return uuid.UUID{}, errSkipUUIDSample
+			}
+			return uuid.UUID{}, err
+		}
+	}
+	line, err := r.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return uuid.UUID{}, err
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return uuid.UUID{}, errSkipUUIDSample
+	}
+	id, err := uuid.Parse(line)
+	if err != nil {
+		return uuid.UUID{}, errSkipUUIDSample
+	}
+	return id, nil
+}
+
+// sampleUniqueKeysFromFile picks want distinct keys by random byte offsets into the file (see
+// readUUIDLineAtRandomOffset). It does not read or buffer the whole file.
+func sampleUniqueKeysFromFile(path string, want int, rng *rand.Rand) ([]uuid.UUID, int64, error) {
+	if want <= 0 {
+		return nil, 0, errors.New("want must be positive")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	size := info.Size()
+	if size == 0 {
+		return nil, 0, errors.New("key file is empty")
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = f.Close() }()
 
-	var keys []uuid.UUID
-	s := bufio.NewScanner(f)
-	// Long lines are UUIDs only; default buffer is enough
-	for s.Scan() {
-		line := strings.TrimSpace(s.Text())
-		if line == "" {
+	const maxAttemptsMul = 64
+	maxAttempts := want * maxAttemptsMul
+	if maxAttempts < 8192 {
+		maxAttempts = 8192
+	}
+
+	out := make([]uuid.UUID, 0, want)
+	seen := make(map[uuid.UUID]struct{}, want)
+
+	for attempt := 0; len(out) < want && attempt < maxAttempts; attempt++ {
+		id, err := readUUIDLineAtRandomOffset(f, size, rng)
+		if errors.Is(err, errSkipUUIDSample) {
 			continue
 		}
-		id, err := uuid.Parse(line)
 		if err != nil {
-			return nil, fmt.Errorf("parse uuid %q: %w", line, err)
+			return nil, size, err
 		}
-		keys = append(keys, id)
+		if _, dup := seen[id]; dup {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
-	if err := s.Err(); err != nil {
-		return nil, err
-	}
-	if len(keys) == 0 {
-		return nil, errors.New("key file is empty")
-	}
-	return keys, nil
-}
 
-func sampleUniqueKeys(keys []uuid.UUID, n int, rng *rand.Rand) []uuid.UUID {
-	if n >= len(keys) {
-		out := make([]uuid.UUID, len(keys))
-		copy(out, keys)
-		return out
+	if len(out) == 0 {
+		return nil, size, errors.New("no valid UUID lines sampled (empty or invalid file content?)")
 	}
-	perm := rng.Perm(len(keys))[:n]
-	out := make([]uuid.UUID, 0, n)
-	for _, i := range perm {
-		out = append(out, keys[i])
+	if len(out) < want {
+		log.Printf("test-reads: warning: only sampled %d unique keys (wanted %d); small file, short lines, or many duplicates", len(out), want)
 	}
-	return out
+	return out, size, nil
 }
 
 func runTestReads(ctx context.Context, dsn, tableRel, keyFile string, keysetSize, batchSize, rounds int, seed int64) error {
@@ -308,15 +387,14 @@ func runTestReads(ctx context.Context, dsn, tableRel, keyFile string, keysetSize
 		return fmt.Errorf("describe table: %w", err)
 	}
 
-	allKeys, err := loadSortedKeyFile(keyFile)
+	rng := rand.New(rand.NewSource(seed))
+	keyset, fileSize, err := sampleUniqueKeysFromFile(keyFile, keysetSize, rng)
 	if err != nil {
-		return fmt.Errorf("load keys: %w", err)
+		return fmt.Errorf("sample keys: %w", err)
 	}
 
-	rng := rand.New(rand.NewSource(seed))
-	keyset := sampleUniqueKeys(allKeys, keysetSize, rng)
-	log.Printf("test-reads: loaded %d keys from file, using keyset size %d, %d partitions",
-		len(allKeys), len(keyset), len(pr.nodeIDs))
+	log.Printf("test-reads: key file %d bytes, keyset %d unique keys, %d partitions",
+		fileSize, len(keyset), len(pr.nodeIDs))
 
 	var okBatches, rowCount int64
 	var mu sync.Mutex
@@ -333,7 +411,7 @@ func runTestReads(ctx context.Context, dsn, tableRel, keyFile string, keysetSize
 		for i := range batch {
 			batch[i] = keyset[rng.Intn(len(keyset))]
 		}
-		slices.SortFunc(batch, bytesCompareUUID)
+		slices.SortFunc(batch, compareYDBUUIDOrder)
 		batch = slices.Compact(batch)
 		if len(batch) == 0 {
 			continue
