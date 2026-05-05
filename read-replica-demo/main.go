@@ -15,11 +15,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"path"
-	"sort"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -310,9 +311,42 @@ func (pr *partitionRouter) partitionIndexForKey(k uuid.UUID) int {
 	return idx
 }
 
-func (pr *partitionRouter) withPreferredNode(ctx context.Context, k uuid.UUID) context.Context {
-	idx := pr.partitionIndexForKey(k)
-	return ydb.WithPreferredNodeID(ctx, pr.nodeIDs[idx])
+func percentileFromSorted(sorted []time.Duration, p int) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	// Nearest-rank percentile: ceil(p/100*N), converted to zero-based index.
+	idx := int(math.Ceil(float64(p)*float64(len(sorted))/100.0)) - 1
+	if idx < 0 {
+		idx = 0
+	}
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
+	}
+	return sorted[idx]
+}
+
+func logBatchLatencyStats(latencies []time.Duration) {
+	if len(latencies) == 0 {
+		log.Printf("test-reads: batch latency stats: no successful partition-queries")
+		return
+	}
+	sorted := append([]time.Duration(nil), latencies...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+
+	var sum time.Duration
+	for _, d := range sorted {
+		sum += d
+	}
+	avgMs := float64(sum) / float64(len(sorted)) / float64(time.Millisecond)
+	minMs := float64(sorted[0]) / float64(time.Millisecond)
+	maxMs := float64(sorted[len(sorted)-1]) / float64(time.Millisecond)
+	p50Ms := float64(percentileFromSorted(sorted, 50)) / float64(time.Millisecond)
+	p90Ms := float64(percentileFromSorted(sorted, 90)) / float64(time.Millisecond)
+	p99Ms := float64(percentileFromSorted(sorted, 99)) / float64(time.Millisecond)
+
+	log.Printf("test-reads: batch latency stats (ms): n=%d min=%.3f max=%.3f avg=%.3f p50=%.3f p90=%.3f p99=%.3f",
+		len(sorted), minMs, maxMs, avgMs, p50Ms, p90Ms, p99Ms)
 }
 
 // nextUUIDRecordOffset returns pos advanced by skipRecords 16-byte records, wrapping at EOF.
@@ -462,6 +496,14 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 
 	var okBatches, rowCount atomic.Int64
 	var roundDone atomic.Int64
+	var latMu sync.Mutex
+	latencies := make([]time.Duration, 0, rounds)
+	defer func() {
+		latMu.Lock()
+		snapshot := append([]time.Duration(nil), latencies...)
+		latMu.Unlock()
+		logBatchLatencyStats(snapshot)
+	}()
 	rounds64 := int64(rounds)
 	stopExecProgress := startProgressLogger(func() {
 		log.Printf("test-reads: execution progress rounds %d / %d, partition-queries %d, rows %d",
@@ -511,6 +553,7 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 				q := `DECLARE $ids AS List<Uuid>;
 SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WHERE id IN $ids;`
 
+				start := time.Now()
 				err := db.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
 					rs, err := s.QueryResultSet(ctx, q,
 						query.WithParameters(params),
@@ -541,7 +584,11 @@ SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WH
 				}, query.WithIdempotent())
 				if err != nil {
 					errCh <- fmt.Errorf("partition %d (%d keys): %w", pi, len(ks), err)
+					return
 				}
+				latMu.Lock()
+				latencies = append(latencies, time.Since(start))
+				latMu.Unlock()
 			}(pi, ks)
 		}
 		innerWg.Wait()
