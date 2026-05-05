@@ -508,13 +508,11 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 
 				items := make([]types.Value, len(ks))
 				for i, id := range ks {
-					items[i] = types.StructValue(
-						types.StructFieldValue("id", types.UuidValue(id)),
-					)
+					items[i] = types.UuidValue(id)
 				}
 				params := ydb.ParamsBuilder().Param("$ids").BeginList().AddItems(items...).EndList().Build()
 
-				q := `DECLARE $ids AS List<Struct<id: Uuid>>;
+				q := `DECLARE $ids AS List<Uuid>;
 SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WHERE id IN $ids;`
 
 				err := db.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
