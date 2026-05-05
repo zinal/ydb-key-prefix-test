@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"sort"
 	"slices"
 	"strings"
 	"sync"
@@ -298,15 +299,11 @@ func buildPartitionRouter(desc options.Description) (*partitionRouter, error) {
 }
 
 func (pr *partitionRouter) partitionIndexForKey(k uuid.UUID) int {
-	idx, found := slices.BinarySearchFunc(pr.upperBounds, k, func(upper uuid.UUID, key uuid.UUID) int {
-		return compareYDBUUIDOrder(key, upper)
+	// Key ranges are [from, to), so we need the first upper bound strictly greater than key.
+	// If key is >= all explicit uppers, it belongs to the open-ended last partition.
+	idx := sort.Search(len(pr.upperBounds), func(i int) bool {
+		return compareYDBUUIDOrder(pr.upperBounds[i], k) > 0
 	})
-	if found {
-		idx++
-	}
-	if idx < 0 {
-		idx = 0
-	}
 	if idx >= len(pr.nodeIDs) {
 		idx = len(pr.nodeIDs) - 1
 	}
@@ -489,16 +486,10 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 		if len(batch) == 0 {
 			continue
 		}
-		/* Temporary comment out for testing
 		byPart := make([][]uuid.UUID, len(pr.nodeIDs))
 		for _, k := range batch {
 			pi := pr.partitionIndexForKey(k)
 			byPart[pi] = append(byPart[pi], k)
-		}
-		*/
-		byPart := make([][]uuid.UUID, len(batch))
-		for i, k := range batch {
-			byPart[i] = append(byPart[i], k)
 		}
 
 		var innerWg sync.WaitGroup
