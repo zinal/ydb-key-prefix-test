@@ -515,9 +515,7 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 				params := ydb.ParamsBuilder().Param("$ids").BeginList().AddItems(items...).EndList().Build()
 
 				q := `DECLARE $ids AS List<Struct<id: Uuid>>;
-SELECT m.id AS id, m.collection_id AS collection_id,
-       m.tv AS tv, m.ballast1 AS ballast1
-FROM AS_TABLE($ids) AS k INNER JOIN ` + "`" + mainDemoTable + "`" + ` AS m ON m.id = k.id;`
+SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WHERE id IN $ids;`
 
 				err := db.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
 					rs, err := s.QueryResultSet(ctx, q,
