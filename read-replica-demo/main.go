@@ -554,22 +554,22 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 				q := `DECLARE $ids AS List<Uuid>;
 SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WHERE id IN $ids;`
 
-				qctx, qcancel := context.WithTimeout(context.Background(), 5*time.Second)
+				qctx, qcancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer qcancel()
 
 				start := time.Now()
-				err := db.Query().Do(qctx, func(ctx context.Context, s query.Session) error {
-					rs, err := s.QueryResultSet(ctx, q,
+				err := db.Query().Do(qctx, func(fctx context.Context, s query.Session) error {
+					rs, err := s.QueryResultSet(fctx, q,
 						query.WithParameters(params),
 						query.WithTxControl(query.StaleReadOnlyTxControl()),
 					)
 					if err != nil {
 						return err
 					}
-					defer func() { _ = rs.Close(ctx) }()
+					defer func() { _ = rs.Close(fctx) }()
 					var rows int
 					for {
-						row, err := rs.NextRow(ctx)
+						row, err := rs.NextRow(fctx)
 						if errors.Is(err, io.EOF) {
 							break
 						}
@@ -588,7 +588,6 @@ SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WH
 				}, query.WithIdempotent())
 				if err != nil {
 					errCh <- fmt.Errorf("partition %d (%d keys): %w", pi, len(ks), err)
-					return
 				}
 				latMu.Lock()
 				latencies = append(latencies, time.Since(start))
