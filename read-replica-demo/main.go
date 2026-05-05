@@ -161,7 +161,8 @@ func runDumpKeys(ctx context.Context, dsn, outPath string, pageSize uint64) erro
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer func() { _ = db.Close(ctx) }()
+	closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer func() { _ = db.Close(closeCtx); closeCancel() }()
 
 	f, err := os.Create(outPath)
 	if err != nil {
