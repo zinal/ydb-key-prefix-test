@@ -489,11 +489,16 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 		if len(batch) == 0 {
 			continue
 		}
-
+		/* Temporary comment out for testing
 		byPart := make([][]uuid.UUID, len(pr.nodeIDs))
 		for _, k := range batch {
 			pi := pr.partitionIndexForKey(k)
 			byPart[pi] = append(byPart[pi], k)
+		}
+		*/
+		byPart := make([][]uuid.UUID, len(batch))
+		for i, k := range batch {
+			byPart[i] = append(byPart[i], k)
 		}
 
 		var innerWg sync.WaitGroup
