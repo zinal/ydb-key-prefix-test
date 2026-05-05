@@ -553,8 +553,11 @@ func runTestReads(ctx context.Context, dsn, keyFile string, keysetSize, batchSiz
 				q := `DECLARE $ids AS List<Uuid>;
 SELECT id, collection_id, tv, ballast1 FROM ` + "`" + mainDemoTable + "`" + ` WHERE id IN $ids;`
 
+				qctx, qcancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer qcancel()
+
 				start := time.Now()
-				err := db.Query().Do(ctx, func(ctx context.Context, s query.Session) error {
+				err := db.Query().Do(qctx, func(ctx context.Context, s query.Session) error {
 					rs, err := s.QueryResultSet(ctx, q,
 						query.WithParameters(params),
 						query.WithTxControl(query.StaleReadOnlyTxControl()),
