@@ -4,7 +4,6 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
@@ -70,14 +69,9 @@ public class UuidKeyGen extends BaseKeyGen {
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(long prefix, Instant instant) {
-        SecureRandom ng = Holder.numberGenerator;
+        SecureRandom sr = Holder.SR;
         byte[] data = new byte[16];
-        ng.nextBytes(data);
-
-        data[6] &= 0x0f;
-        data[6] |= 0x80;
-        data[8] &= 0x3f;
-        data[8] |= (byte) 0x80;
+        sr.nextBytes(data);
 
         long msb = 0;
         long lsb = 0;
@@ -89,7 +83,10 @@ public class UuidKeyGen extends BaseKeyGen {
         }
 
         msb = update(msb, prefix, instant);
-        return new UUID(reorder(msb), lsb);
+        msb = reorder(msb);
+        msb = updateVersion(msb);
+        lsb = updateVariant(lsb);
+        return new UUID(msb, lsb);
     }
 
     /**
@@ -106,6 +103,7 @@ public class UuidKeyGen extends BaseKeyGen {
      * Generates the new ID with the random prefix value and a specified
      * instant.
      *
+     * @param instant Timestamp for the value being generated.
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(Instant instant) {
@@ -115,6 +113,7 @@ public class UuidKeyGen extends BaseKeyGen {
     /**
      * Generates the new ID with the random prefix value and a specified date.
      *
+     * @param date The date (UTC midnight) used for the embedded timestamp
      * @return Random UUID with the embedded prefix, timestamp code and suffix.
      */
     public UUID nextValue(LocalDate date) {

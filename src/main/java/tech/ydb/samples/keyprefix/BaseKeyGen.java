@@ -12,7 +12,7 @@ import java.util.UUID;
  *
  * @author zinal
  */
-public class BaseKeyGen {
+class BaseKeyGen {
 
     /**
      * Bit width of the embedded second-precision timestamp field.
@@ -53,7 +53,7 @@ public class BaseKeyGen {
      * @return Prefix mask to be applied
      */
     public long getPrefixMask() {
-        return Holder.prefixMasks[maskPos];
+        return Holder.PREFIX_MASKS[maskPos];
     }
 
     /**
@@ -62,9 +62,9 @@ public class BaseKeyGen {
      * @return Random value to be used as a prefix.
      */
     public long nextPrefix() {
-        final SecureRandom ng = Holder.numberGenerator;
+        final SecureRandom sr = Holder.SR;
         byte[] data = new byte[8];
-        ng.nextBytes(data);
+        sr.nextBytes(data);
         long lsb = 0;
         for (int i = 0; i < 8; i++) {
             lsb = (lsb << 8) | (data[i] & 0xff);
@@ -73,7 +73,7 @@ public class BaseKeyGen {
     }
 
     protected final long update(long msb, long prefix, Instant instant) {
-        long tsMask = Holder.timestampMasks[maskPos];
+        long tsMask = Holder.TS_MASKS[maskPos];
         long tsCode = getTimestampCode(instant);
         tsCode = tsCode << (TIMESTAMP_FIELD_LOW_BIT - maskPos);
         long bits;
@@ -81,7 +81,7 @@ public class BaseKeyGen {
             bits = msb & ~tsMask;
             bits |= tsCode & tsMask;
         } else {
-            long prefixMask = Holder.prefixMasks[maskPos];
+            long prefixMask = Holder.PREFIX_MASKS[maskPos];
             bits = msb & ~(prefixMask | tsMask);
             bits |= (prefix & prefixMask) | (tsCode & tsMask);
         }
@@ -108,14 +108,16 @@ public class BaseKeyGen {
     /**
      * YDB uses GUID (Microsoft-style) mixed-endian format.
      *
-     * xxxxxxxx 0 1 2 3x 4 5 6 7 <br/>
-     * xINPUT: 01020304 05060708 090a0b0c 0d0e0f10 <br/>
+     * <pre>
+     * xxxxxxxx 0 1 2 3x 4 5 6 7
+     * INPUT:  01020304 05060708 090a0b0c 0d0e0f10
      * OUTPUT: 04030201 06050807 090a0b0c 0d0e0f10
+     * </pre>
      *
      * This function puts the bytes of MSB in the proper order.
      *
-     * @param v
-     * @return
+     * @param v MSB value in standard big-endian long representation
+     * @return MSB value with byte order adjusted for YDB GUID storage
      */
     public static long reorder(long v) {
         long b0 = (v >>> 56) & 0xffL;
@@ -128,6 +130,15 @@ public class BaseKeyGen {
         long b7 = v & 0xffL;
         return (b3 << 56) | (b2 << 48) | (b1 << 40) | (b0 << 32)
                 | (b5 << 24) | (b4 << 16) | (b7 << 8) | b6;
+    }
+
+    public static long updateVersion(long msb) {
+        return (msb & ~0xF000L) | 0x8000L;
+    }
+
+    public static long updateVariant(long lsb) {
+        return (lsb & 0x3FFFFFFFFFFFFFFFL)
+                | 0x8000000000000000L;
     }
 
     /**
@@ -152,22 +163,22 @@ public class BaseKeyGen {
      */
     static class Holder {
 
-        static final SecureRandom numberGenerator = new SecureRandom();
+        static final SecureRandom SR = new SecureRandom();
 
-        static final long prefixMasks[];
-        static final long timestampMasks[];
+        static final long[] PREFIX_MASKS;
+        static final long[] TS_MASKS;
 
         static {
-            long pf[] = new long[32];
-            long ts[] = new long[32];
+            long[] pf = new long[32];
+            long[] ts = new long[32];
             pf[0] = 0x8000000000000000L;
             ts[0] = (((1L << TIMESTAMP_BITS) - 1) << TIMESTAMP_FIELD_LOW_BIT);
             for (int i = 1; i < 32; ++i) {
                 pf[i] = pf[i - 1] | (1L << (63 - i));
                 ts[i] = (ts[i - 1] >>> 1);
             }
-            prefixMasks = pf;
-            timestampMasks = ts;
+            PREFIX_MASKS = pf;
+            TS_MASKS = ts;
         }
     }
 }
