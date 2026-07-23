@@ -20,15 +20,6 @@
     <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto" markerUnits="userSpaceOnUse">
       <path d="M1.5,1 L6.5,4 L1.5,7" fill="none" stroke="#475569" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
     </marker>
-    <marker id="arrowBlue" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M1.5,1 L6.5,4 L1.5,7" fill="none" stroke="#2563eb" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrowOrange" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M1.5,1 L6.5,4 L1.5,7" fill="none" stroke="#ea580c" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrowPurple" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M1.5,1 L6.5,4 L1.5,7" fill="none" stroke="#7c3aed" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
     <marker id="arrowAxis" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="4" markerHeight="4" orient="auto" markerUnits="userSpaceOnUse">
       <path d="M1.5,1 L6.5,4 L1.5,7" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
     </marker>
@@ -84,23 +75,16 @@
     <rect x="0" y="14" width="180" height="14" fill="#e2e8f0"/>
     <text x="90" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">Партиция P1</text>
     <text x="90" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix ~ 0x1C8</text>
-    <rect x="18" y="62" width="144" height="16" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
-    <text x="90" y="74" text-anchor="middle" font-size="10" fill="#6d28d9">1 ключ</text>
     <rect x="200" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#shadow)"/>
     <rect x="200" y="0" width="180" height="28" rx="10" fill="#dbeafe"/>
     <rect x="200" y="14" width="180" height="14" fill="#dbeafe"/>
     <text x="290" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">Партиция P2</text>
     <text x="290" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix ~ 0x2A1</text>
-    <rect x="218" y="58" width="144" height="16" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
-    <rect x="218" y="78" width="144" height="16" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
-    <text x="290" y="98" text-anchor="middle" font-size="10" fill="#1d4ed8">2 ключа</text>
     <rect x="400" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#shadow)"/>
     <rect x="400" y="0" width="180" height="28" rx="10" fill="#ffedd5"/>
     <rect x="400" y="14" width="180" height="14" fill="#ffedd5"/>
     <text x="490" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#9a3412">Партиция P3</text>
     <text x="490" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix ~ 0x7F3</text>
-    <rect x="418" y="62" width="144" height="16" rx="4" fill="#ffedd5" stroke="#fdba74"/>
-    <text x="490" y="74" text-anchor="middle" font-size="10" fill="#c2410c">1 ключ</text>
     <rect x="600" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-dasharray="6 4"/>
     <text x="690" y="58" text-anchor="middle" font-size="28" fill="#cbd5e1">...</text>
     <text x="690" y="88" text-anchor="middle" font-size="11" fill="#94a3b8">до 2^10 ~ 1024</text>
@@ -108,10 +92,6 @@
     <rect x="800" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-dasharray="6 4"/>
     <text x="890" y="58" text-anchor="middle" font-size="28" fill="#cbd5e1">...</text>
     <text x="890" y="88" text-anchor="middle" font-size="11" fill="#94a3b8">Pn</text>
-    <path d="M 794 66 C 794 120, 160 120, 160 104" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#arrowPurple)"/>
-    <path d="M 335 66 C 335 120, 380 120, 380 104" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#arrowBlue)"/>
-    <path d="M 335 46 C 335 120, 380 120, 380 104" fill="none" stroke="#2563eb" stroke-width="1.6" opacity="0.45"/>
-    <path d="M 565 66 C 565 120, 580 120, 580 104" fill="none" stroke="#ea580c" stroke-width="1.6" marker-end="url(#arrowOrange)"/>
   </g>
 
   <path d="M 550 392 L 550 412" stroke="#475569" stroke-width="1.8" marker-end="url(#arrow)"/>
