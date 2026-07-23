@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 720" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 720" font-family="DejaVu Sans, Liberation Sans, Arial, sans-serif">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#f8fafc"/>
@@ -23,9 +23,6 @@
     <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
       <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/>
     </marker>
-    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
-      <path d="M0,0 L10,5 L0,10 Z" fill="#059669"/>
-    </marker>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
       <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.12"/>
     </filter>
@@ -33,183 +30,134 @@
 
   <rect width="1100" height="720" fill="url(#bg)"/>
 
-  <text x="550" y="38" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">
-     0A?@545;5=85 UUIDv8-:;NG59: ?@5D8:A � ?0@B8F88 � 1;>:8 ?> 2@5<5=8
-  </text>
-  <text x="550" y="62" text-anchor="middle" font-size="13" fill="#64748b">
-  !B@C:BC@0 128-18B=>3> :;NG0 (UuidKeyGen): ?@5D8:A 7040QB ?0@B8F8N, <5B:0 2@5<5=8 3@C??8@C5B AB@>:8 2=CB@8 =5Q
-  </text>
+  <text x="550" y="38" text-anchor="middle" font-size="24" font-weight="700" fill="#0f172a">Распределение UUIDv8-ключей: префикс &#8594; партиции &#8594; блоки по времени</text>
+  <text x="550" y="62" text-anchor="middle" font-size="13" fill="#64748b">Структура 128-битного ключа (UuidKeyGen): префикс задаёт партицию, метка времени группирует строки внутри неё</text>
 
-  <!-- UUID structure -->
   <g transform="translate(90, 88)">
-    <text x="0" y="-8" font-size="14" font-weight="600" fill="#334155">!B@C:BC@0 UUIDv8 (MSB + LSB)</text>
+    <text x="0" y="-8" font-size="14" font-weight="600" fill="#334155">Структура UUIDv8 (MSB + LSB)</text>
     <rect x="0" y="0" width="920" height="54" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#shadow)"/>
-
     <rect x="12" y="12" width="92" height="30" rx="6" fill="url(#prefixGrad)"/>
-    <text x="58" y="32" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">@5D8:A</text>
-    <text x="58" y="50" text-anchor="middle" font-size="10" fill="#64748b">10 18B</text>
-
+    <text x="58" y="32" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">Префикс</text>
+    <text x="58" y="50" text-anchor="middle" font-size="10" fill="#64748b">10 бит</text>
     <rect x="112" y="12" width="168" height="30" rx="6" fill="url(#tsGrad)"/>
-    <text x="196" y="32" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">5B:0 2@5<5=8</text>
-    <text x="196" y="50" text-anchor="middle" font-size="10" fill="#64748b">30 18B (A5:C=4K)</text>
-
+    <text x="196" y="32" text-anchor="middle" font-size="12" font-weight="700" fill="#ffffff">Метка времени</text>
+    <text x="196" y="50" text-anchor="middle" font-size="10" fill="#64748b">30 бит (секунды)</text>
     <rect x="288" y="12" width="120" height="30" rx="6" fill="url(#randGrad)"/>
-    <text x="348" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">!;CG09=.</text>
+    <text x="348" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Случайн.</text>
     <text x="348" y="50" text-anchor="middle" font-size="10" fill="#64748b">MSB</text>
-
     <rect x="416" y="12" width="492" height="30" rx="6" fill="url(#randGrad)"/>
-    <text x="662" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">!;CG09=0O G0ABL LSB (64 18B0)</text>
-
+    <text x="662" y="32" text-anchor="middle" font-size="12" font-weight="600" fill="#1e293b">Случайная часть LSB (64 бита)</text>
     <text x="940" y="32" font-size="11" fill="#94a3b8">v8</text>
   </g>
 
-  <!-- Generated keys -->
   <g transform="translate(90, 188)">
-    <text x="0" y="0" font-size="14" font-weight="600" fill="#334155">1. 5=5@0F8O :;NG59</text>
-
+    <text x="0" y="0" font-size="14" font-weight="600" fill="#334155">1. Генерация ключей</text>
     <g transform="translate(0, 18)">
       <rect x="0" y="0" width="210" height="58" rx="8" fill="#eff6ff" stroke="#93c5fd"/>
       <text x="14" y="24" font-size="12" font-weight="700" fill="#1d4ed8">prefix = 0x2A1</text>
       <text x="14" y="42" font-size="11" fill="#334155">ts = 2024-03-15 10:00</text>
-      <text x="14" y="56" font-size="10" fill="#64748b">+ A;CG09=K9 ACDD8:A</text>
-
+      <text x="14" y="56" font-size="10" fill="#64748b">+ случайный суффикс</text>
       <rect x="230" y="0" width="210" height="58" rx="8" fill="#eff6ff" stroke="#93c5fd"/>
       <text x="244" y="24" font-size="12" font-weight="700" fill="#1d4ed8">prefix = 0x2A1</text>
       <text x="244" y="42" font-size="11" fill="#334155">ts = 2024-03-15 10:05</text>
-      <text x="244" y="56" font-size="10" fill="#64748b">+ A;CG09=K9 ACDD8:A</text>
-
+      <text x="244" y="56" font-size="10" fill="#64748b">+ случайный суффикс</text>
       <rect x="460" y="0" width="210" height="58" rx="8" fill="#fff7ed" stroke="#fdba74"/>
       <text x="474" y="24" font-size="12" font-weight="700" fill="#c2410c">prefix = 0x7F3</text>
       <text x="474" y="42" font-size="11" fill="#334155">ts = 2024-03-15 10:02</text>
-      <text x="474" y="56" font-size="10" fill="#64748b">+ A;CG09=K9 ACDD8:A</text>
-
+      <text x="474" y="56" font-size="10" fill="#64748b">+ случайный суффикс</text>
       <rect x="690" y="0" width="210" height="58" rx="8" fill="#f5f3ff" stroke="#c4b5fd"/>
       <text x="704" y="24" font-size="12" font-weight="700" fill="#6d28d9">prefix = 0x1C8</text>
       <text x="704" y="42" font-size="11" fill="#334155">ts = 2024-03-16 08:30</text>
-      <text x="704" y="56" font-size="10" fill="#64748b">+ A;CG09=K9 ACDD8:A</text>
+      <text x="704" y="56" font-size="10" fill="#64748b">+ случайный суффикс</text>
     </g>
   </g>
 
-  <!-- Arrow to partitions -->
   <path d="M 550 272 L 550 302" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
   <rect x="332" y="280" width="436" height="24" rx="12" fill="#dbeafe"/>
-  <text x="550" y="296" text-anchor="middle" font-size="12" font-weight="600" fill="#1e40af">
-    (03 1: <0@H@CB870F8O ?> ?@5D8:AC � 480?07>= ?0@B8F88 B01;8FK
-  </text>
+  <text x="550" y="296" text-anchor="middle" font-size="12" font-weight="600" fill="#1e40af">Шаг 1: маршрутизация по префиксу &#8594; диапазон партиции таблицы</text>
 
-  <!-- Partitions -->
   <g transform="translate(70, 318)">
-    <text x="0" y="0" font-size="14" font-weight="600" fill="#334155">2. 0@B8F88 B01;8FK (480?07>=K ?5@28G=>3> :;NG0)</text>
-
+    <text x="0" y="0" font-size="14" font-weight="600" fill="#334155">2. Партиции таблицы (диапазоны первичного ключа)</text>
     <g transform="translate(0, 16)">
       <rect x="0" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#shadow)"/>
       <rect x="0" y="0" width="180" height="28" rx="10" fill="#e2e8f0"/>
       <rect x="0" y="14" width="180" height="14" fill="#e2e8f0"/>
-      <text x="90" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">0@B8F8O P�</text>
-      <text x="90" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix H 0x1C8</text>
+      <text x="90" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#334155">Партиция P1</text>
+      <text x="90" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix ~ 0x1C8</text>
       <rect x="18" y="62" width="144" height="16" rx="4" fill="#ede9fe" stroke="#c4b5fd"/>
-      <text x="90" y="74" text-anchor="middle" font-size="10" fill="#6d28d9">1 :;NG</text>
-
+      <text x="90" y="74" text-anchor="middle" font-size="10" fill="#6d28d9">1 ключ</text>
       <rect x="200" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#shadow)"/>
       <rect x="200" y="0" width="180" height="28" rx="10" fill="#dbeafe"/>
       <rect x="200" y="14" width="180" height="14" fill="#dbeafe"/>
-      <text x="290" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">0@B8F8O P�</text>
-      <text x="290" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix H 0x2A1</text>
+      <text x="290" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#1e3a8a">Партиция P2</text>
+      <text x="290" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix ~ 0x2A1</text>
       <rect x="218" y="58" width="144" height="16" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
       <rect x="218" y="78" width="144" height="16" rx="4" fill="#dbeafe" stroke="#93c5fd"/>
-      <text x="290" y="98" text-anchor="middle" font-size="10" fill="#1d4ed8">2 :;NG0</text>
-
+      <text x="290" y="98" text-anchor="middle" font-size="10" fill="#1d4ed8">2 ключа</text>
       <rect x="400" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#cbd5e1" filter="url(#shadow)"/>
       <rect x="400" y="0" width="180" height="28" rx="10" fill="#ffedd5"/>
       <rect x="400" y="14" width="180" height="14" fill="#ffedd5"/>
-      <text x="490" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#9a3412">0@B8F8O P�</text>
-      <text x="490" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix H 0x7F3</text>
+      <text x="490" y="19" text-anchor="middle" font-size="12" font-weight="700" fill="#9a3412">Партиция P3</text>
+      <text x="490" y="48" text-anchor="middle" font-size="11" fill="#64748b">prefix ~ 0x7F3</text>
       <rect x="418" y="62" width="144" height="16" rx="4" fill="#ffedd5" stroke="#fdba74"/>
-      <text x="490" y="74" text-anchor="middle" font-size="10" fill="#c2410c">1 :;NG</text>
-
+      <text x="490" y="74" text-anchor="middle" font-size="10" fill="#c2410c">1 ключ</text>
       <rect x="600" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-dasharray="6 4"/>
-      <text x="690" y="58" text-anchor="middle" font-size="28" fill="#cbd5e1">&</text>
-      <text x="690" y="88" text-anchor="middle" font-size="11" fill="#94a3b8">4> 2^10 H 1024</text>
-      <text x="690" y="104" text-anchor="middle" font-size="11" fill="#94a3b8">?0@B8F89</text>
-
+      <text x="690" y="58" text-anchor="middle" font-size="28" fill="#cbd5e1">...</text>
+      <text x="690" y="88" text-anchor="middle" font-size="11" fill="#94a3b8">до 2^10 ~ 1024</text>
+      <text x="690" y="104" text-anchor="middle" font-size="11" fill="#94a3b8">партиций</text>
       <rect x="800" y="0" width="180" height="118" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-dasharray="6 4"/>
-      <text x="890" y="58" text-anchor="middle" font-size="28" fill="#cbd5e1">&</text>
-      <text x="890" y="88" text-anchor="middle" font-size="11" fill="#94a3b8">P�</text>
+      <text x="890" y="58" text-anchor="middle" font-size="28" fill="#cbd5e1">...</text>
+      <text x="890" y="88" text-anchor="middle" font-size="11" fill="#94a3b8">Pn</text>
     </g>
-
-    <!-- routing arrows from keys to partitions -->
     <path d="M 794 96 C 794 150, 160 150, 160 134" fill="none" stroke="#7c3aed" stroke-width="2" marker-end="url(#arrowBlue)"/>
     <path d="M 335 96 C 335 150, 380 150, 380 134" fill="none" stroke="#2563eb" stroke-width="2" marker-end="url(#arrowBlue)"/>
     <path d="M 335 76 C 335 150, 380 150, 380 134" fill="none" stroke="#2563eb" stroke-width="2" opacity="0.45"/>
     <path d="M 565 96 C 565 150, 580 150, 580 134" fill="none" stroke="#ea580c" stroke-width="2" marker-end="url(#arrowBlue)"/>
   </g>
 
-  <!-- Arrow to time blocks -->
   <path d="M 550 462 L 550 492" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
   <rect x="300" y="470" width="500" height="24" rx="12" fill="#d1fae5"/>
-  <text x="550" y="486" text-anchor="middle" font-size="12" font-weight="600" fill="#065f46">
-    (03 2: 2=CB@8 ?0@B8F88  3@C??8@>2:0 ?> <5B:5 2@5<5=8 (1;>:8)
-  </text>
+  <text x="550" y="486" text-anchor="middle" font-size="12" font-weight="600" fill="#065f46">Шаг 2: внутри партиции - группировка по метке времени (блоки)</text>
 
-  <!-- Zoom into partition P2 -->
   <g transform="translate(170, 508)">
     <rect x="0" y="0" width="760" height="182" rx="14" fill="#ffffff" stroke="#93c5fd" stroke-width="2" filter="url(#shadow)"/>
     <rect x="0" y="0" width="760" height="34" rx="14" fill="#dbeafe"/>
     <rect x="0" y="18" width="760" height="16" fill="#dbeafe"/>
-    <text x="380" y="23" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a">
-      #25;8G5=85: ?0@B8F8O P� (prefix = 0x2A1)  :;NG8 C?>@O4>G5=K ?> 2@5<5=8
-    </text>
-
-    <!-- time axis -->
+    <text x="380" y="23" text-anchor="middle" font-size="13" font-weight="700" fill="#1e3a8a">Увеличение: партиция P2 (prefix = 0x2A1) - ключи упорядочены по времени</text>
     <line x1="40" y1="132" x2="720" y2="132" stroke="#94a3b8" stroke-width="2"/>
     <polygon points="720,132 712,128 712,136" fill="#94a3b8"/>
-    <text x="730" y="136" font-size="11" fill="#64748b">2@5<O �</text>
-
-    <!-- block 1 -->
+    <text x="730" y="136" font-size="11" fill="#64748b">время &#8594;</text>
     <rect x="70" y="58" width="180" height="68" rx="8" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
-    <text x="160" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#047857">;>: T�</text>
-    <text x="160" y="96" text-anchor="middle" font-size="10" fill="#334155">10:00:00  10:04:59</text>
+    <text x="160" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#047857">Блок T1</text>
+    <text x="160" y="96" text-anchor="middle" font-size="10" fill="#334155">10:00:00 - 10:04:59</text>
     <rect x="88" y="104" width="144" height="14" rx="3" fill="#dbeafe" stroke="#93c5fd"/>
-    <text x="160" y="114" text-anchor="middle" font-size="9" fill="#1d4ed8">:;NG A (10:00)</text>
-
-    <!-- block 2 -->
+    <text x="160" y="114" text-anchor="middle" font-size="9" fill="#1d4ed8">ключ A (10:00)</text>
     <rect x="290" y="58" width="180" height="68" rx="8" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
-    <text x="380" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#047857">;>: T�</text>
-    <text x="380" y="96" text-anchor="middle" font-size="10" fill="#334155">10:05:00  10:09:59</text>
+    <text x="380" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#047857">Блок T2</text>
+    <text x="380" y="96" text-anchor="middle" font-size="10" fill="#334155">10:05:00 - 10:09:59</text>
     <rect x="308" y="104" width="144" height="14" rx="3" fill="#dbeafe" stroke="#93c5fd"/>
-    <text x="380" y="114" text-anchor="middle" font-size="9" fill="#1d4ed8">:;NG B (10:05)</text>
-
-    <!-- block 3 empty -->
+    <text x="380" y="114" text-anchor="middle" font-size="9" fill="#1d4ed8">ключ B (10:05)</text>
     <rect x="510" y="58" width="180" height="68" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="5 4"/>
-    <text x="600" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#64748b">;>: T�</text>
-    <text x="600" y="96" text-anchor="middle" font-size="10" fill="#94a3b8">A;54CNI89 8=B5@20;</text>
-    <text x="600" y="114" text-anchor="middle" font-size="9" fill="#94a3b8">(?>:0 ?CAB)</text>
-
-    <!-- ticks -->
+    <text x="600" y="78" text-anchor="middle" font-size="11" font-weight="700" fill="#64748b">Блок T3</text>
+    <text x="600" y="96" text-anchor="middle" font-size="10" fill="#94a3b8">следующий интервал</text>
+    <text x="600" y="114" text-anchor="middle" font-size="9" fill="#94a3b8">(пока пуст)</text>
     <line x1="70" y1="128" x2="70" y2="136" stroke="#64748b"/>
     <line x1="250" y1="128" x2="250" y2="136" stroke="#64748b"/>
     <line x1="470" y1="128" x2="470" y2="136" stroke="#64748b"/>
     <line x1="690" y1="128" x2="690" y2="136" stroke="#64748b"/>
-
     <text x="70" y="152" text-anchor="middle" font-size="10" fill="#64748b">10:00</text>
     <text x="250" y="152" text-anchor="middle" font-size="10" fill="#64748b">10:05</text>
     <text x="470" y="152" text-anchor="middle" font-size="10" fill="#64748b">10:10</text>
     <text x="690" y="152" text-anchor="middle" font-size="10" fill="#64748b">10:15</text>
-
-    <text x="380" y="170" text-anchor="middle" font-size="11" fill="#475569">
-      @8 D8:A8@>20==>< ?@5D8:A5 ?>@O4>: UUID H ?>@O4>: 2@5<5=8 � A<56=K5 :;NG8 ?>?040NB 2 A>A54=85 480?07>=K
-    </text>
+    <text x="380" y="170" text-anchor="middle" font-size="11" fill="#475569">При фиксированном префиксе порядок UUID ~ порядок времени: смежные ключи в соседних диапазонах</text>
   </g>
 
-  <!-- legend -->
   <g transform="translate(90, 698)">
     <rect x="0" y="-12" width="14" height="14" rx="3" fill="url(#prefixGrad)"/>
-    <text x="22" y="0" font-size="11" fill="#475569">@5D8:A � 2K1>@ ?0@B8F88</text>
-
+    <text x="22" y="0" font-size="11" fill="#475569">Префикс &#8594; выбор партиции</text>
     <rect x="220" y="-12" width="14" height="14" rx="3" fill="url(#tsGrad)"/>
-    <text x="242" y="0" font-size="11" fill="#475569">5B:0 2@5<5=8 � 1;>:8 2=CB@8 ?0@B8F88</text>
-
+    <text x="242" y="0" font-size="11" fill="#475569">Метка времени &#8594; блоки внутри партиции</text>
     <rect x="520" y="-12" width="14" height="14" rx="3" fill="url(#randGrad)"/>
-    <text x="542" y="0" font-size="11" fill="#475569">!;CG09=K5 18BK � C=8:0;L=>ABL :;NG59</text>
+    <text x="542" y="0" font-size="11" fill="#475569">Случайные биты &#8594; уникальность ключей</text>
   </g>
 </svg>
